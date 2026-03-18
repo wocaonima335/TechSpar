@@ -4,6 +4,7 @@ import {
   getCoreKnowledge,
   updateCoreKnowledge,
   createCoreKnowledge,
+  deleteCoreKnowledge,
   getHighFreq,
   updateHighFreq,
   createTopic,
@@ -349,6 +350,17 @@ export default function Knowledge() {
     }
   };
 
+  const handleDeleteFile = async (filename) => {
+    if (!confirm(`确定删除「${filename}」？此操作不可撤销。`)) return;
+    try {
+      await deleteCoreKnowledge(selected, filename);
+      setCoreFiles((prev) => prev.filter((f) => f.filename !== filename));
+      if (expandedFile === filename) setExpandedFile(null);
+    } catch (e) {
+      alert("删除失败: " + e.message);
+    }
+  };
+
   const handleAddTopic = async () => {
     const key = newTopicKey.trim();
     const name = newTopicName.trim();
@@ -548,9 +560,24 @@ export default function Knowledge() {
                         onClick={() => setExpandedFile(expandedFile === f.filename ? null : f.filename)}
                       >
                         <span>{f.filename}</span>
-                        <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                          {expandedFile === f.filename ? "▼" : "▶"} {(f.content?.length || 0)} 字
-                        </span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                            {expandedFile === f.filename ? "▼" : "▶"} {(f.content?.length || 0)} 字
+                          </span>
+                          <button
+                            title="删除文件"
+                            style={{
+                              background: "none", border: "none", color: "var(--text-dim)",
+                              cursor: "pointer", fontSize: 14, padding: "2px 6px", borderRadius: 4,
+                              opacity: 0.5, transition: "all 0.15s",
+                            }}
+                            onClick={(e) => { e.stopPropagation(); handleDeleteFile(f.filename); }}
+                            onMouseEnter={(e) => { e.currentTarget.style.color = "#e74c3c"; e.currentTarget.style.opacity = 1; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.opacity = 0.5; }}
+                          >
+                            &#x2715;
+                          </button>
+                        </div>
                       </div>
                       {expandedFile === f.filename && (
                         <div style={styles.fileContent}>

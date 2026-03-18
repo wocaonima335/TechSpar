@@ -133,11 +133,59 @@ def list_sessions_by_topic(topic: str, limit: int = 50) -> list[dict]:
     return results
 
 
-def list_sessions(limit: int = 20) -> list[dict]:
+def list_sessions(
+    limit: int = 20,
+    offset: int = 0,
+    mode: str | None = None,
+    topic: str | None = None,
+) -> dict:
     conn = _get_conn()
+
+    where = ["review IS NOT NULL"]
+    params: list = []
+    if mode:
+        where.append("mode = ?")
+        params.append(mode)
+    if topic:
+        where.append("topic = ?")
+        params.append(topic)
+    where_sql = " AND ".join(where)
+
+    total = conn.execute(
+        f"SELECT COUNT(*) FROM sessions WHERE {where_sql}", params,
+    ).fetchone()[0]
+
     rows = conn.execute(
-        "SELECT session_id, mode, topic, created_at, review IS NOT NULL as has_review FROM sessions WHERE review IS NOT NULL ORDER BY created_at DESC LIMIT ?",
-        (limit,),
+        f"SELECT session_id, mode, topic, created_at, overall FROM sessions WHERE {where_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        params + [limit, offset],
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+
+    items = []
+    for r in rows:
+        overall = json.loads(r["overall"] or "{}")
+        items.append({
+            "session_id": r["session_id"],
+            "mode": r["mode"],
+            "topic": r["topic"],
+            "created_at": r["created_at"],
+            "avg_score": overall.get("avg_score"),
+        })
+    return {"items": items, "total": total}
+
+
+def delete_session(session_id: str) -> bool:
+    conn = _get_conn()
+    cursor = conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+    conn.commit()
+    conn.close()
+    return cursor.rowcount > 0
+
+
+def list_distinct_topics() -> list[str]:
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT DISTINCT topic FROM sessions WHERE topic IS NOT NULL AND review IS NOT NULL ORDER BY topic",
+    ).fetchall()
+    conn.close()
+    return [r["topic"] for r in rows]

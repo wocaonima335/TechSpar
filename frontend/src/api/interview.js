@@ -76,8 +76,24 @@ export async function getReview(sessionId) {
   return res.json();
 }
 
-export async function getHistory(limit = 20) {
-  const res = await fetch(`${API_BASE}/interview/history?limit=${limit}`);
+export async function getHistory(limit = 20, offset = 0, mode = null, topic = null) {
+  const params = new URLSearchParams({ limit, offset });
+  if (mode) params.set("mode", mode);
+  if (topic) params.set("topic", topic);
+  const res = await fetch(`${API_BASE}/interview/history?${params}`);
+  return res.json();
+}
+
+export async function deleteSession(sessionId) {
+  const res = await fetch(`${API_BASE}/interview/session/${sessionId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getInterviewTopics() {
+  const res = await fetch(`${API_BASE}/interview/topics`);
   return res.json();
 }
 
@@ -113,6 +129,14 @@ export async function updateCoreKnowledge(topic, filename, content) {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function deleteCoreKnowledge(topic, filename) {
+  const res = await fetch(`${API_BASE}/knowledge/${topic}/core/${encodeURIComponent(filename)}`, {
+    method: "DELETE",
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();

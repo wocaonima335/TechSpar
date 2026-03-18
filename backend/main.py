@@ -21,6 +21,7 @@ from backend.memory import get_profile, update_profile_after_interview, llm_upda
 from backend.storage.sessions import (
     create_session, append_message, save_review, save_drill_answers,
     get_session, list_sessions, list_sessions_by_topic,
+    delete_session, list_distinct_topics,
 )
 
 app = FastAPI(title="TechSpar", version="0.1.0")
@@ -541,6 +542,22 @@ async def update_core_knowledge(topic: str, filename: str, body: dict):
     return {"ok": True}
 
 
+@router.delete("/knowledge/{topic}/core/{filename}")
+async def delete_core_knowledge(topic: str, filename: str):
+    """Delete a core knowledge file."""
+    if topic not in TOPIC_MAP:
+        raise HTTPException(400, f"Unknown topic: {topic}")
+    from backend.config import settings
+    topic_dir = settings.knowledge_path / TOPIC_MAP[topic]
+    filepath = topic_dir / filename
+    if not filepath.exists():
+        raise HTTPException(404, f"File not found: {filename}")
+    filepath.unlink()
+    from backend.indexer import _index_cache
+    _index_cache.pop(topic, None)
+    return {"ok": True}
+
+
 @router.post("/knowledge/{topic}/core")
 async def create_core_knowledge(topic: str, body: dict):
     """Create a new core knowledge file."""
@@ -597,9 +614,29 @@ async def get_review(session_id: str):
 
 
 @router.get("/interview/history")
-async def get_history(limit: int = 20):
-    """List past interview sessions."""
-    return list_sessions(limit)
+async def get_history(
+    limit: int = 20,
+    offset: int = 0,
+    mode: str = None,
+    topic: str = None,
+):
+    """List past interview sessions with filtering and pagination."""
+    return list_sessions(limit=limit, offset=offset, mode=mode, topic=topic)
+
+
+@router.delete("/interview/session/{session_id}")
+async def delete_session_endpoint(session_id: str):
+    """Delete a session record."""
+    deleted = delete_session(session_id)
+    if not deleted:
+        raise HTTPException(404, "Session not found.")
+    return {"ok": True}
+
+
+@router.get("/interview/topics")
+async def get_interview_topics():
+    """List distinct topics from completed sessions (for filter dropdown)."""
+    return list_distinct_topics()
 
 
 app.include_router(router)
