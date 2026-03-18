@@ -7,11 +7,7 @@ langgraph>=0.2.0
 llama-index>=0.11.0
 llama-index-readers-file>=0.4.0
 llama-index-llms-openai>=0.3.0
-llama-index-embeddings-huggingface>=0.4.0
 llama-index-embeddings-openai>=0.3.0
-
-# Embedding model
-sentence-transformers>=3.0.0
 
 # PDF reading (for resume)
 pypdf>=4.0.0
