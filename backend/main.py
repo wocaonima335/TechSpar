@@ -186,6 +186,13 @@ def get_user_profile():
     return get_profile()
 
 
+@router.get("/profile/due-reviews")
+def get_due_reviews(topic: str = None):
+    """Get weak points due for spaced repetition review."""
+    from backend.spaced_repetition import get_due_reviews as _get_due
+    return _get_due(topic)
+
+
 @router.get("/profile/topic/{topic}/history")
 def get_topic_history(topic: str):
     """Get session history for a specific topic."""
@@ -385,6 +392,14 @@ async def end_interview(session_id: str, body: EndDrillRequest = None):
         # Save to SQLite
         save_review(session_id, review, scores, overall.get("new_weak_points", []), overall)
 
+        # Update spaced repetition state for evaluated weak points
+        from backend.spaced_repetition import update_weak_point_sr
+        for s in scores:
+            wp = s.get("weak_point")
+            sc = s.get("score")
+            if wp and isinstance(sc, (int, float)):
+                update_weak_point_sr(topic, wp, sc)
+
         # Update profile (1 LLM call via Mem0 pipeline — uses overall data)
         await _update_drill_profile(topic, overall, scores, len(questions))
 
@@ -410,6 +425,7 @@ async def end_interview(session_id: str, body: EndDrillRequest = None):
     messages = state.values.get("messages", [])
     scores = state.values.get("scores", [])
     weak_points = state.values.get("weak_points", [])
+    eval_history = state.values.get("eval_history", [])
     topic_name = state.values.get("topic_name", entry.get("topic"))
 
     review = generate_review(
@@ -418,6 +434,7 @@ async def end_interview(session_id: str, body: EndDrillRequest = None):
         scores=scores,
         weak_points=weak_points,
         topic=topic_name,
+        eval_history=eval_history,
     )
 
     extraction = await update_profile_after_interview(

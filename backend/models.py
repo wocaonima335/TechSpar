@@ -32,6 +32,8 @@ class ResumeInterviewState(TypedDict, total=False):
     questions_asked: list[str]
     phase_question_count: int
     is_finished: bool
+    last_eval: dict          # Latest inline eval from interviewer {score, should_advance, brief}
+    eval_history: list       # All evals accumulated across the interview
 
 
 class TopicDrillState(TypedDict, total=False):
