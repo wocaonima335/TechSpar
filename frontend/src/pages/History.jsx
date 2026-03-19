@@ -6,7 +6,7 @@ const PAGE_SIZE = 15;
 
 function getScoreColor(score) {
   if (score >= 8) return { bg: "rgba(0,184,148,0.15)", color: "var(--green)" };
-  if (score >= 6) return { bg: "rgba(108,92,231,0.15)", color: "var(--accent-light)" };
+  if (score >= 6) return { bg: "rgba(245,158,11,0.15)", color: "var(--accent-light)" };
   if (score >= 4) return { bg: "rgba(253,203,110,0.2)", color: "#e2b93b" };
   return { bg: "rgba(225,112,85,0.15)", color: "var(--red)" };
 }
@@ -70,7 +70,7 @@ export default function History() {
     <div className="flex-1 px-4 py-8 md:px-6 md:py-10 max-w-3xl mx-auto w-full">
       {/* Title row */}
       <div className="flex items-baseline justify-between mb-5">
-        <div className="text-2xl md:text-[28px] font-bold">历史记录</div>
+        <div className="text-2xl md:text-[28px] font-display font-bold">历史记录</div>
         <div className="text-sm text-dim">共 {total} 条记录</div>
       </div>
 

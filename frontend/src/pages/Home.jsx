@@ -57,11 +57,12 @@ export default function Home() {
   return (
     <div className="flex-1 flex flex-col items-center px-4 pt-8 pb-10 md:px-6 md:pt-15">
       {/* Hero */}
-      <div className="text-center mb-10 md:mb-12">
-        <h1 className="text-3xl md:text-[40px] font-bold mb-3 bg-gradient-to-br from-accent-light to-accent bg-clip-text text-transparent">
+      <div className="text-center mb-10 md:mb-12 relative">
+        <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-[500px] h-[250px] bg-gradient-to-b from-accent/10 via-accent/5 to-transparent rounded-full blur-3xl pointer-events-none" />
+        <h1 className="text-3xl md:text-[44px] font-display font-bold mb-3 bg-gradient-to-r from-accent-light via-accent to-orange bg-clip-text text-transparent relative">
           TechSpar
         </h1>
-        <p className="text-base text-dim max-w-[500px]">
+        <p className="text-base text-dim max-w-[500px] relative">
           越练越懂你的 AI 面试教练——追踪你的成长轨迹，精准命中薄弱点
         </p>
       </div>
@@ -69,8 +70,8 @@ export default function Home() {
       {/* Mode cards */}
       <div className="flex flex-col md:flex-row gap-4 md:gap-6 mb-10 md:mb-12 w-full md:w-auto md:justify-center">
         <div
-          className={`w-full md:w-80 px-6 py-7 rounded-2xl cursor-pointer transition-all text-left border-2
-            ${mode === "resume" ? "border-accent bg-hover" : "border-border bg-card hover:border-accent/50"}`}
+          className={`w-full md:w-80 px-6 py-7 rounded-2xl cursor-pointer transition-all text-left border-2 animate-fade-in
+            ${mode === "resume" ? "border-accent bg-hover shadow-[0_0_24px_rgba(245,158,11,0.1)]" : "border-border bg-card hover:border-accent/50 hover:shadow-[0_0_20px_rgba(245,158,11,0.08)]"}`}
           onClick={() => { setMode("resume"); setSelectedTopic(null); }}
         >
           <div className="inline-block px-2.5 py-1 rounded-md text-xs font-medium mb-3 bg-accent/15 text-accent-light">
@@ -83,8 +84,8 @@ export default function Home() {
         </div>
 
         <div
-          className={`w-full md:w-80 px-6 py-7 rounded-2xl cursor-pointer transition-all text-left border-2
-            ${mode === "topic_drill" ? "border-green bg-hover" : "border-border bg-card hover:border-green/50"}`}
+          className={`w-full md:w-80 px-6 py-7 rounded-2xl cursor-pointer transition-all text-left border-2 animate-fade-in [animation-delay:0.1s]
+            ${mode === "topic_drill" ? "border-green bg-hover shadow-[0_0_24px_rgba(34,197,94,0.1)]" : "border-border bg-card hover:border-green/50 hover:shadow-[0_0_20px_rgba(34,197,94,0.08)]"}`}
           onClick={() => setMode("topic_drill")}
         >
           <div className="inline-block px-2.5 py-1 rounded-md text-xs font-medium mb-3 bg-green/15 text-green">
@@ -202,7 +203,7 @@ export default function Home() {
       {mode && (
         <div className="w-full max-w-[700px]">
           <button
-            className={`w-full py-3.5 rounded-box bg-gradient-to-br from-accent to-accent-light text-white text-base font-semibold transition-opacity ${!canStart || loading ? "opacity-40 cursor-not-allowed" : ""}`}
+            className={`w-full py-3.5 rounded-box bg-gradient-to-r from-accent to-orange text-white text-base font-semibold transition-all ${!canStart || loading ? "opacity-40 cursor-not-allowed" : "hover:shadow-[0_0_24px_rgba(245,158,11,0.2)]"}`}
             disabled={!canStart || loading}
             onClick={handleStart}
           >

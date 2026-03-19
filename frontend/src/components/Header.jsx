@@ -30,7 +30,7 @@ export default function Header() {
       {/* Logo */}
       <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => navigate("/")}>
         <img src="/logo.png" alt="TechSpar" className="w-8 h-8 rounded-lg object-contain" />
-        <span className="text-lg font-semibold text-text">TechSpar</span>
+        <span className="text-lg font-display font-bold text-text">TechSpar</span>
       </div>
 
       {/* Desktop nav */}

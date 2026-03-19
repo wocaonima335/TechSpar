@@ -68,7 +68,7 @@ export default function TopicDetail() {
       <div className="flex items-center gap-3 md:gap-4 mb-8">
         <div className="text-4xl">{topicInfo?.icon || "📝"}</div>
         <div className="flex-1">
-          <div className="text-2xl md:text-[28px] font-bold">{topicInfo?.name || topic}</div>
+          <div className="text-2xl md:text-[28px] font-display font-bold">{topicInfo?.name || topic}</div>
           <div className="text-sm text-dim mt-1">
             {sessions.length} 次训练记录
             {mastery.last_assessed && ` | 上次评估: ${mastery.last_assessed.slice(0, 10)}`}
@@ -119,7 +119,7 @@ export default function TopicDetail() {
             <p>{sessions.length === 0 ? "该领域暂无训练记录" : "还没有生成领域回顾"}</p>
             {sessions.length > 0 && (
               <button
-                className="mt-4 px-6 py-2.5 rounded-lg bg-gradient-to-br from-accent to-accent-light text-white text-sm font-medium"
+                className="mt-4 px-6 py-2.5 rounded-lg bg-gradient-to-r from-accent to-orange text-white text-sm font-medium"
                 onClick={handleGenerate}
                 disabled={generating}
               >

@@ -114,7 +114,7 @@ export default function Profile() {
   if (!hasData) {
     return (
       <div className="flex-1 px-4 py-8 md:px-6 md:py-10 max-w-3xl mx-auto w-full">
-        <div className="text-2xl md:text-[28px] font-bold mb-2">个人画像</div>
+        <div className="text-2xl md:text-[28px] font-display font-bold mb-2">个人画像</div>
         <div className="text-center py-15 text-dim">
           <p>还没有面试数据</p>
           <p className="mt-3 text-sm">开始面试后，系统会实时分析你的每个回答，自动构建你的能力画像</p>
@@ -132,7 +132,7 @@ export default function Profile() {
 
   return (
     <div className="flex-1 px-4 py-8 md:px-6 md:py-10 max-w-3xl mx-auto w-full">
-      <div className="text-2xl md:text-[28px] font-bold mb-2">个人画像</div>
+      <div className="text-2xl md:text-[28px] font-display font-bold mb-2">个人画像</div>
       <div className="text-sm text-dim mb-8">
         {stats.total_answers || 0} 次回答分析{stats.total_sessions ? ` | ${stats.total_sessions} 次完整面试` : ""} | 上次更新: {profile.updated_at?.slice(0, 16)}
       </div>
