@@ -5,6 +5,7 @@ const NAV_ITEMS = [
   { path: "/", label: "首页" },
   { path: "/profile", label: "我的画像" },
   { path: "/knowledge", label: "题库" },
+  { path: "/graph", label: "图谱" },
   { path: "/history", label: "历史记录" },
 ];
 

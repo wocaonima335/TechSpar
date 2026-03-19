@@ -23,6 +23,7 @@ from backend.storage.sessions import (
     get_session, list_sessions, list_sessions_by_topic,
     delete_session, list_distinct_topics,
 )
+from backend.graph import build_graph
 
 app = FastAPI(title="TechSpar", version="0.1.0")
 
@@ -645,6 +646,12 @@ async def update_high_freq(topic: str, body: dict):
     filepath = settings.high_freq_path / f"{topic}.md"
     filepath.write_text(body.get("content", ""), encoding="utf-8")
     return {"ok": True}
+
+
+@router.get("/graph/{topic}")
+def get_topic_graph(topic: str):
+    """Build question relationship graph for a topic."""
+    return build_graph(topic)
 
 
 @router.get("/interview/review/{session_id}")

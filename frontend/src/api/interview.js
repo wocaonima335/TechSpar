@@ -110,6 +110,14 @@ export async function getInterviewTopics() {
   return res.json();
 }
 
+// ── Graph ──
+
+export async function getGraphData(topic) {
+  const res = await fetch(`${API_BASE}/graph/${topic}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 // ── Profile & Retrospective ──
 
 export async function getProfile() {
