@@ -8,6 +8,7 @@ import History from "./pages/History";
 import Profile from "./pages/Profile";
 import Knowledge from "./pages/Knowledge";
 import TopicDetail from "./pages/TopicDetail";
+import Graph from "./pages/Graph";
 import NotFound from "./pages/NotFound";
 
 function App() {
@@ -23,6 +24,7 @@ function App() {
           <Route path="/profile" element={<Profile />} />
           <Route path="/profile/topic/:topic" element={<TopicDetail />} />
           <Route path="/knowledge" element={<Knowledge />} />
+          <Route path="/graph" element={<Graph />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </ErrorBoundary>

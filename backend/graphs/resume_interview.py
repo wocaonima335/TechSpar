@@ -1,4 +1,8 @@
 """模式1: 简历模拟面试 LangGraph."""
+import json
+import logging
+import re
+
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
@@ -10,6 +14,8 @@ from backend.indexer import query_resume
 from backend.memory import get_profile_summary
 from backend.prompts.interviewer import RESUME_INTERVIEWER_SYSTEM
 
+logger = logging.getLogger("uvicorn")
+
 PHASE_ORDER = [
     InterviewPhase.GREETING.value,
     InterviewPhase.SELF_INTRO.value,
@@ -17,6 +23,29 @@ PHASE_ORDER = [
     InterviewPhase.PROJECT_DEEP_DIVE.value,
     InterviewPhase.REVERSE_QA.value,
 ]
+
+# Hard ceiling per phase to prevent infinite loops
+HARD_MAX_PER_PHASE = 10
+
+_EVAL_PATTERN = re.compile(r"<!--EVAL:(.*?)-->", re.DOTALL)
+
+
+def _parse_inline_eval(content: str) -> tuple[str, dict | None]:
+    """Extract and strip hidden eval JSON from interviewer response.
+
+    Returns (clean_content, eval_dict_or_None).
+    """
+    m = _EVAL_PATTERN.search(content)
+    if not m:
+        return content, None
+
+    clean = _EVAL_PATTERN.sub("", content).rstrip()
+    try:
+        eval_data = json.loads(m.group(1))
+        return clean, eval_data
+    except json.JSONDecodeError:
+        logger.warning(f"Failed to parse inline eval: {m.group(1)[:100]}")
+        return clean, None
 
 
 def init_interview(state: ResumeInterviewState) -> dict:
@@ -43,6 +72,7 @@ def init_interview(state: ResumeInterviewState) -> dict:
         "questions_asked": [],
         "phase_question_count": 0,
         "is_finished": False,
+        "eval_history": [],
     }
 
 
@@ -62,39 +92,67 @@ def interviewer_ask(state: ResumeInterviewState) -> dict:
     messages = [SystemMessage(content=system_prompt)] + list(state.get("messages", []))
     response = llm.invoke(messages)
 
-    question_text = response.content[:100]
+    # Parse and strip inline eval from response
+    clean_content, eval_data = _parse_inline_eval(response.content)
     count = state.get("phase_question_count", 0)
 
-    return {
-        "messages": [response],
-        "questions_asked": asked + [question_text],
+    result = {
+        "messages": [AIMessage(content=clean_content)],
+        "questions_asked": asked + [clean_content[:100]],
         "phase_question_count": count + 1,
     }
 
+    if eval_data:
+        eval_data["phase"] = state.get("phase", "")
+        eval_data["question_index"] = count
+        result["last_eval"] = eval_data
+        result["eval_history"] = list(state.get("eval_history", [])) + [eval_data]
+        logger.info(
+            f"Inline eval: phase={eval_data['phase']}, "
+            f"score={eval_data.get('score')}, "
+            f"should_advance={eval_data.get('should_advance')}"
+        )
+
+    return result
+
 
 def route_after_answer(state: ResumeInterviewState) -> str:
-    """After user answers: keep asking, advance phase, or end."""
+    """After user answers: keep asking, advance phase, or end.
+
+    For technical/project_deep_dive: use interviewer's inline eval when available.
+    For other phases: use simple count-based rules.
+    Hard max per phase as safety fallback.
+    """
     if state.get("is_finished"):
         return "end"
 
     phase = state.get("phase", "greeting")
     count = state.get("phase_question_count", 0)
-    max_q = settings.max_questions_per_phase
+    last_eval = state.get("last_eval")
 
-    should_advance = False
+    # Hard ceiling — prevent infinite loops regardless of eval data
+    if count >= HARD_MAX_PER_PHASE:
+        return "advance"
+
+    # Simple phases: count-based rules
     if phase == "greeting" and count >= 1:
-        should_advance = True
-    elif phase == "self_intro" and count >= 2:
-        should_advance = True
-    elif phase == "technical" and count >= max_q:
-        should_advance = True
-    elif phase == "project_deep_dive" and count >= max_q:
-        should_advance = True
-    elif phase == "reverse_qa" and count >= 2:
+        return "advance"
+    if phase == "self_intro" and count >= 2:
+        return "advance"
+    if phase == "reverse_qa" and count >= 2:
         return "end"
 
-    if should_advance:
-        return "advance"
+    # Technical / project_deep_dive: eval-driven with count fallback
+    if phase in ("technical", "project_deep_dive"):
+        # Need at least 2 questions before considering advancement
+        if count >= 2 and last_eval and last_eval.get("should_advance"):
+            logger.info(f"Eval-driven advance: {phase} after {count} questions")
+            return "advance"
+
+        # Count-based fallback
+        max_q = settings.max_questions_per_phase
+        if count >= max_q:
+            return "advance"
 
     return "ask"
 
@@ -114,6 +172,7 @@ def advance_phase(state: ResumeInterviewState) -> dict:
     return {
         "phase": PHASE_ORDER[idx + 1],
         "phase_question_count": 0,
+        "last_eval": {},
     }
 
 

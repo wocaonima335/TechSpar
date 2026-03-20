@@ -1,5 +1,18 @@
 const API_BASE = "/api";
 
+// ── Speech-to-text ──
+
+export async function transcribeAudio(audioBlob) {
+  const form = new FormData();
+  form.append("file", audioBlob, "recording.webm");
+  const res = await fetch(`${API_BASE}/transcribe`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function getTopics() {
   const res = await fetch(`${API_BASE}/topics`);
   return res.json();
@@ -94,6 +107,14 @@ export async function deleteSession(sessionId) {
 
 export async function getInterviewTopics() {
   const res = await fetch(`${API_BASE}/interview/topics`);
+  return res.json();
+}
+
+// ── Graph ──
+
+export async function getGraphData(topic) {
+  const res = await fetch(`${API_BASE}/graph/${topic}`);
+  if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 

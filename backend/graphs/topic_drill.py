@@ -66,13 +66,27 @@ def _load_high_freq(topic: str) -> str:
 
 def generate_drill_questions(topic: str) -> list[dict]:
     """Generate 10 personalized questions for a topic. 1 LLM call."""
+    from backend.spaced_repetition import get_due_reviews, init_sr_for_existing_points
+
+    # Ensure existing weak points have SR state
+    init_sr_for_existing_points()
+
     topic_name = TOPIC_DISPLAY.get(topic, topic)
     drill_ctx = get_topic_context_for_drill(topic)
 
+    # Spaced repetition: prioritize due reviews
+    due_reviews = get_due_reviews(topic)
+    due_points = [wp["point"] for wp in due_reviews[:5]]
+
+    all_weak = list(drill_ctx["weak_points"])
+    for dp in due_points:
+        if dp not in all_weak:
+            all_weak.insert(0, dp)
+
     # Retrieve knowledge — prioritize weak areas
     queries = []
-    if drill_ctx["weak_points"]:
-        queries.append(" ".join(drill_ctx["weak_points"][:5]))
+    if all_weak:
+        queries.append(" ".join(all_weak[:5]))
     queries.append(f"{topic_name} 核心知识点 面试常见问题")
 
     all_chunks = []
@@ -96,12 +110,18 @@ def generate_drill_questions(topic: str) -> list[dict]:
     # Load high-frequency questions
     high_freq = _load_high_freq(topic) or "暂无"
 
+    # Format weak points, marking due reviews
+    weak_lines = []
+    for w in all_weak[:10]:
+        prefix = "[到期复习] " if w in due_points else ""
+        weak_lines.append(f"- {prefix}{w}")
+
     prompt = DRILL_QUESTION_GEN_PROMPT.format(
         topic_name=topic_name,
         knowledge_context=knowledge_ctx,
         user_profile=get_profile_summary_for_drill(),
         mastery_info=drill_ctx["mastery_info"],
-        weak_points="\n".join(f"- {w}" for w in drill_ctx["weak_points"]) or "暂无",
+        weak_points="\n".join(weak_lines) or "暂无",
         high_freq_questions=high_freq,
         recent_questions="\n".join(f"- {q}" for q in drill_ctx["recent_questions"][-10:]) or "暂无",
         past_insights=past_insights_text,

@@ -23,6 +23,7 @@ from backend.storage.sessions import (
     get_session, list_sessions, list_sessions_by_topic,
     delete_session, list_distinct_topics,
 )
+from backend.graph import build_graph
 
 app = FastAPI(title="TechSpar", version="0.1.0")
 
@@ -110,6 +111,26 @@ async def upload_resume(file: UploadFile = File(...)):
     return {"ok": True, "filename": file.filename, "size": len(content)}
 
 
+# ── Speech-to-text ──
+
+@router.post("/transcribe")
+async def transcribe(file: UploadFile = File(...)):
+    """Transcribe audio to text using FunASR Paraformer-zh."""
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        raise HTTPException(400, "Empty audio file.")
+
+    try:
+        from backend.transcribe import transcribe_audio
+        suffix = "." + (file.filename or "audio.webm").rsplit(".", 1)[-1]
+        text = transcribe_audio(audio_bytes, suffix=suffix)
+        return {"text": text}
+    except ImportError:
+        raise HTTPException(501, "FunASR not installed. Run: pip install funasr")
+    except Exception as e:
+        raise HTTPException(500, f"Transcription failed: {e}")
+
+
 @router.get("/topics")
 def get_topics():
     """List available drill topics (with name and icon)."""
@@ -164,6 +185,13 @@ def delete_topic(key: str):
 def get_user_profile():
     """Get the user's accumulated interview profile."""
     return get_profile()
+
+
+@router.get("/profile/due-reviews")
+def get_due_reviews(topic: str = None):
+    """Get weak points due for spaced repetition review."""
+    from backend.spaced_repetition import get_due_reviews as _get_due
+    return _get_due(topic)
 
 
 @router.get("/profile/topic/{topic}/history")
@@ -365,6 +393,14 @@ async def end_interview(session_id: str, body: EndDrillRequest = None):
         # Save to SQLite
         save_review(session_id, review, scores, overall.get("new_weak_points", []), overall)
 
+        # Update spaced repetition state for evaluated weak points
+        from backend.spaced_repetition import update_weak_point_sr
+        for s in scores:
+            wp = s.get("weak_point")
+            sc = s.get("score")
+            if wp and isinstance(sc, (int, float)):
+                update_weak_point_sr(topic, wp, sc)
+
         # Update profile (1 LLM call via Mem0 pipeline — uses overall data)
         await _update_drill_profile(topic, overall, scores, len(questions))
 
@@ -390,6 +426,7 @@ async def end_interview(session_id: str, body: EndDrillRequest = None):
     messages = state.values.get("messages", [])
     scores = state.values.get("scores", [])
     weak_points = state.values.get("weak_points", [])
+    eval_history = state.values.get("eval_history", [])
     topic_name = state.values.get("topic_name", entry.get("topic"))
 
     review = generate_review(
@@ -398,6 +435,7 @@ async def end_interview(session_id: str, body: EndDrillRequest = None):
         scores=scores,
         weak_points=weak_points,
         topic=topic_name,
+        eval_history=eval_history,
     )
 
     extraction = await update_profile_after_interview(
@@ -608,6 +646,12 @@ async def update_high_freq(topic: str, body: dict):
     filepath = settings.high_freq_path / f"{topic}.md"
     filepath.write_text(body.get("content", ""), encoding="utf-8")
     return {"ok": True}
+
+
+@router.get("/graph/{topic}")
+def get_topic_graph(topic: str):
+    """Build question relationship graph for a topic."""
+    return build_graph(topic)
 
 
 @router.get("/interview/review/{session_id}")
