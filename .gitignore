@@ -20,5 +20,8 @@ data/interviews.db
 # Generated / cache
 data/.index_cache/
 data/models/
+.cache/
+.run-logs/
+frontend/.npm-cache/
 .DS_Store
 llm.md

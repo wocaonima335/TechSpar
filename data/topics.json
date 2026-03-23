@@ -10,5 +10,9 @@
   "database": { "name": "数据库与中间件", "icon": "🗄️", "dir": "09_数据库与中间件" },
   "memory": { "name": "记忆管理", "icon": "💾", "dir": "10_记忆管理" },
   "backend": { "name": "后端八股", "icon": "⚙️", "dir": "11_后端八股" },
-  "leetcode": { "name": "算法与数据结构", "icon": "🧮", "dir": "leetcode" }
+  "leetcode": { "name": "算法与数据结构", "icon": "🧮", "dir": "leetcode" },
+  "cpp": { "name": "C++ 核心", "icon": "⚙️", "dir": "13_CPP核心" },
+  "stl": { "name": "STL 与容器", "icon": "📦", "dir": "14_STL与容器" },
+  "ffmpeg": { "name": "ffmpeg 开发", "icon": "🎬", "dir": "15_ffmpeg开发" },
+  "network": { "name": "计算机网络", "icon": "🌐", "dir": "16_计算机网络" }
 }
