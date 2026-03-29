@@ -1,35 +1,35 @@
-"""LlamaIndex indexing for resume and interview knowledge base."""
+"""LlamaIndex helpers for resume and topic knowledge retrieval."""
+
+from __future__ import annotations
+
 import json
 from pathlib import Path
 
 from llama_index.core import (
-    SimpleDirectoryReader,
-    VectorStoreIndex,
-    StorageContext,
-    load_index_from_storage,
     Settings as LlamaSettings,
+    SimpleDirectoryReader,
+    StorageContext,
+    VectorStoreIndex,
+    load_index_from_storage,
 )
 
 from backend.config import settings
-from backend.llm_provider import get_llama_llm, get_embedding
+from backend.llm_provider import get_embedding, get_llama_llm
 
 PERSIST_DIR = settings.base_dir / "data" / ".index_cache"
-
-# In-memory index cache — avoid reloading from disk on every request
 _index_cache: dict[str, "VectorStoreIndex"] = {}
-
 TOPICS_JSON = settings.base_dir / "data" / "topics.json"
 
 
 def load_topics() -> dict:
-    """Load topics from data/topics.json. Returns {key: {name, icon, dir}}."""
+    """Load topics from data/topics.json."""
     if TOPICS_JSON.exists():
         return json.loads(TOPICS_JSON.read_text(encoding="utf-8"))
     return {}
 
 
 def save_topics(topics: dict):
-    """Write topics back to data/topics.json."""
+    """Persist topics back to data/topics.json."""
     TOPICS_JSON.parent.mkdir(parents=True, exist_ok=True)
     TOPICS_JSON.write_text(
         json.dumps(topics, ensure_ascii=False, indent=2) + "\n",
@@ -38,21 +38,36 @@ def save_topics(topics: dict):
 
 
 def get_topic_map() -> dict[str, str]:
-    """Returns {key: dir_name} for backward compat."""
-    return {k: v["dir"] for k, v in load_topics().items()}
+    return {key: value["dir"] for key, value in load_topics().items()}
 
 
-# Module-level alias so existing `from backend.indexer import TOPIC_MAP` still works
 class _TopicMapProxy(dict):
-    """Lazy dict that reads from topics.json on every access."""
-    def __getitem__(self, key):    return get_topic_map()[key]
-    def __contains__(self, key):   return key in get_topic_map()
-    def __iter__(self):            return iter(get_topic_map())
-    def keys(self):                return get_topic_map().keys()
-    def values(self):              return get_topic_map().values()
-    def items(self):               return get_topic_map().items()
-    def __len__(self):             return len(get_topic_map())
-    def get(self, key, default=None): return get_topic_map().get(key, default)
+    """Lazy proxy that reads topics.json on every access."""
+
+    def __getitem__(self, key):
+        return get_topic_map()[key]
+
+    def __contains__(self, key):
+        return key in get_topic_map()
+
+    def __iter__(self):
+        return iter(get_topic_map())
+
+    def keys(self):
+        return get_topic_map().keys()
+
+    def values(self):
+        return get_topic_map().values()
+
+    def items(self):
+        return get_topic_map().items()
+
+    def __len__(self):
+        return len(get_topic_map())
+
+    def get(self, key, default=None):
+        return get_topic_map().get(key, default)
+
 
 TOPIC_MAP = _TopicMapProxy()
 
@@ -62,32 +77,52 @@ def _init_llama_settings():
     LlamaSettings.embed_model = get_embedding()
 
 
-def build_resume_index(force_rebuild: bool = False) -> VectorStoreIndex:
-    """Build or load the resume index."""
-    if "resume" in _index_cache and not force_rebuild:
-        return _index_cache["resume"]
+def _get_resume_dir(user_id: str) -> Path:
+    helper = getattr(settings, "get_resume_dir", None)
+    if callable(helper):
+        return helper(user_id)
+    return settings.resume_path / user_id
+
+
+def _get_resume_cache_dir(user_id: str) -> Path:
+    helper = getattr(settings, "get_resume_cache_dir", None)
+    if callable(helper):
+        return helper(user_id)
+    return PERSIST_DIR / "resume" / user_id
+
+
+def _resume_cache_key(user_id: str) -> str:
+    return f"resume:{user_id}"
+
+
+def build_resume_index(user_id: str, force_rebuild: bool = False) -> VectorStoreIndex:
+    """Build or load a user's resume index."""
+    cache_key = _resume_cache_key(user_id)
+    if cache_key in _index_cache and not force_rebuild:
+        return _index_cache[cache_key]
 
     _init_llama_settings()
-    cache_dir = PERSIST_DIR / "resume"
+    resume_dir = _get_resume_dir(user_id)
+    cache_dir = _get_resume_cache_dir(user_id)
 
     if cache_dir.exists() and not force_rebuild:
         storage_context = StorageContext.from_defaults(persist_dir=str(cache_dir))
         index = load_index_from_storage(storage_context)
     else:
         docs = SimpleDirectoryReader(
-            input_dir=str(settings.resume_path),
+            input_dir=str(resume_dir),
             recursive=True,
         ).load_data()
         index = VectorStoreIndex.from_documents(docs)
         cache_dir.mkdir(parents=True, exist_ok=True)
         index.storage_context.persist(persist_dir=str(cache_dir))
 
-    _index_cache["resume"] = index
+    _index_cache[cache_key] = index
     return index
 
 
 def build_topic_index(topic: str, force_rebuild: bool = False) -> VectorStoreIndex:
-    """Build or load index for a specific knowledge topic."""
+    """Build or load the shared topic knowledge index."""
     if topic in _index_cache and not force_rebuild:
         return _index_cache[topic]
 
@@ -124,16 +159,14 @@ def build_topic_index(topic: str, force_rebuild: bool = False) -> VectorStoreInd
     return index
 
 
-def query_resume(question: str, top_k: int = 3) -> str:
-    """Query the resume index."""
-    index = build_resume_index()
+def query_resume(user_id: str, question: str, top_k: int = 3) -> str:
+    index = build_resume_index(user_id)
     engine = index.as_query_engine(similarity_top_k=top_k)
     response = engine.query(question)
     return str(response)
 
 
 def query_topic(topic: str, question: str, top_k: int = 5) -> str:
-    """Query a topic knowledge base."""
     index = build_topic_index(topic)
     engine = index.as_query_engine(similarity_top_k=top_k)
     response = engine.query(question)
@@ -141,7 +174,6 @@ def query_topic(topic: str, question: str, top_k: int = 5) -> str:
 
 
 def retrieve_topic_context(topic: str, question: str, top_k: int = 5) -> list[str]:
-    """Retrieve raw text chunks from topic index (for answer evaluation)."""
     index = build_topic_index(topic)
     retriever = index.as_retriever(similarity_top_k=top_k)
     nodes = retriever.retrieve(question)

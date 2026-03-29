@@ -23,6 +23,16 @@ class InterviewPhase(str, Enum):
     END = "end"
 
 
+class UserRole(str, Enum):
+    ADMIN = "admin"
+    MEMBER = "member"
+
+
+class UserStatus(str, Enum):
+    ACTIVE = "active"
+    DISABLED = "disabled"
+
+
 # ── LangGraph States (TypedDict for max compatibility) ──
 
 class ResumeInterviewState(TypedDict, total=False):
@@ -63,3 +73,34 @@ class ChatRequest(BaseModel):
 
 class EndDrillRequest(BaseModel):
     answers: list[dict] = Field(default_factory=list)  # [{question_id: int, answer: str}]
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class AuthUser(BaseModel):
+    id: str
+    username: str
+    display_name: str
+    role: UserRole
+    status: UserStatus
+
+
+class AdminUserCreateRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    display_name: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=6, max_length=256)
+    role: UserRole = UserRole.MEMBER
+    status: UserStatus = UserStatus.ACTIVE
+
+
+class AdminUserUpdateRequest(BaseModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=64)
+    role: UserRole | None = None
+    status: UserStatus | None = None
+
+
+class ResetPasswordRequest(BaseModel):
+    password: str = Field(min_length=6, max_length=256)

@@ -1,110 +1,88 @@
-"""间隔重复系统 — SM-2 算法。
+"""Spaced repetition helpers based on SM-2."""
 
-为每个薄弱点维护复习调度：
-- 答对了 → 间隔拉长（1天 → 3天 → 7天 → ...）
-- 答错了 → 间隔重置到 1 天
-- 每次出题时优先出"到期需要复习"的知识点
-"""
+from __future__ import annotations
+
 from datetime import date, timedelta
 
 from backend.memory import _load_profile, _save_profile
 
 
 def sm2_update(sr_state: dict, score_0_10: float) -> dict:
-    """SM-2 algorithm update.
-
-    Args:
-        sr_state: Current spaced repetition state {interval_days, ease_factor, repetitions, ...}
-        score_0_10: Score on 0-10 scale (mapped to SM-2 quality 0-5)
-
-    Returns:
-        Updated SR state dict
-    """
-    # Map 0-10 to SM-2 quality 0-5
+    """Update one spaced-repetition state with an answer score."""
     quality = min(5, int(score_0_10 / 2))
-    ef = sr_state.get("ease_factor", 2.5)
-    reps = sr_state.get("repetitions", 0)
+    ease_factor = sr_state.get("ease_factor", 2.5)
+    repetitions = sr_state.get("repetitions", 0)
 
-    if quality >= 3:  # Pass
-        if reps == 0:
+    if quality >= 3:
+        if repetitions == 0:
             interval = 1
-        elif reps == 1:
+        elif repetitions == 1:
             interval = 3
         else:
-            interval = int(sr_state.get("interval_days", 1) * ef)
-        reps += 1
-    else:  # Fail — reset
+            interval = int(sr_state.get("interval_days", 1) * ease_factor)
+        repetitions += 1
+    else:
         interval = 1
-        reps = 0
+        repetitions = 0
 
-    # Update ease factor (never below 1.3)
-    ef = max(1.3, ef + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)))
+    ease_factor = max(1.3, ease_factor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)))
 
     return {
         "interval_days": interval,
-        "ease_factor": round(ef, 2),
-        "repetitions": reps,
+        "ease_factor": round(ease_factor, 2),
+        "repetitions": repetitions,
         "next_review": (date.today() + timedelta(days=interval)).isoformat(),
         "last_score": score_0_10,
     }
 
 
-def get_due_reviews(topic: str = None) -> list[dict]:
-    """Get weak points that are due for review.
-
-    Returns list of weak_point dicts sorted by ease_factor (hardest first).
-    """
-    profile = _load_profile()
+def get_due_reviews(user_id: str, topic: str | None = None) -> list[dict]:
+    """Return weak points that are due for review for one user."""
+    profile = _load_profile(user_id)
     today = date.today().isoformat()
     due = []
 
-    for wp in profile.get("weak_points", []):
-        if wp.get("improved"):
+    for weak_point in profile.get("weak_points", []):
+        if weak_point.get("improved"):
             continue
-        if topic and wp.get("topic") != topic:
+        if topic and weak_point.get("topic") != topic:
             continue
-        sr = wp.get("sr", {})
-        next_review = sr.get("next_review", "2000-01-01")
+        next_review = weak_point.get("sr", {}).get("next_review", "2000-01-01")
         if next_review <= today:
-            due.append(wp)
+            due.append(weak_point)
 
-    # Hardest first (lowest ease_factor)
-    due.sort(key=lambda x: x.get("sr", {}).get("ease_factor", 2.5))
+    due.sort(key=lambda item: item.get("sr", {}).get("ease_factor", 2.5))
     return due
 
 
-def update_weak_point_sr(topic: str, point_text: str, score: float):
-    """Update spaced repetition state for a specific weak point after evaluation.
+def update_weak_point_sr(user_id: str, topic: str, point_text: str, score: float):
+    """Update the review state for one weak point belonging to one user."""
+    profile = _load_profile(user_id)
 
-    Matches by topic + point text substring.
-    """
-    profile = _load_profile()
-
-    for wp in profile.get("weak_points", []):
-        if wp.get("improved"):
+    for weak_point in profile.get("weak_points", []):
+        if weak_point.get("improved"):
             continue
-        if topic and wp.get("topic") != topic:
+        if topic and weak_point.get("topic") != topic:
             continue
-        # Fuzzy match: point_text is contained in the weak point or vice versa
-        if point_text.lower() in wp["point"].lower() or wp["point"].lower() in point_text.lower():
-            sr = wp.get("sr", {})
-            wp["sr"] = sm2_update(sr, score)
-            _save_profile(profile)
+        weak_text = weak_point.get("point", "")
+        if point_text.lower() in weak_text.lower() or weak_text.lower() in point_text.lower():
+            weak_point["sr"] = sm2_update(weak_point.get("sr", {}), score)
+            _save_profile(user_id, profile)
             return True
 
     return False
 
 
-def init_sr_for_existing_points():
-    """Initialize SR state for existing weak points that don't have it yet."""
-    profile = _load_profile()
+def init_sr_for_existing_points(user_id: str):
+    """Ensure all active weak points have a spaced-repetition state."""
+    profile = _load_profile(user_id)
     changed = False
 
-    for wp in profile.get("weak_points", []):
-        if wp.get("improved"):
+    for weak_point in profile.get("weak_points", []):
+        if weak_point.get("improved"):
             continue
-        if "sr" not in wp:
-            wp["sr"] = {
+        if "sr" not in weak_point:
+            weak_point["sr"] = {
                 "interval_days": 1,
                 "ease_factor": 2.5,
                 "repetitions": 0,
@@ -114,4 +92,4 @@ def init_sr_for_existing_points():
             changed = True
 
     if changed:
-        _save_profile(profile)
+        _save_profile(user_id, profile)

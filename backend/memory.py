@@ -1,212 +1,202 @@
-"""个性化记忆系统 — 跨面试用户画像。
+"""User profile memory helpers."""
 
-设计哲学：
-- 文件即真相（OpenClaw）：profile.json 可人工编辑
-- 两阶段提取（Mem0）：Extract → Update，不无脑追加
-- 向量召回（bge-m3）：语义搜索历史洞察
-"""
+from __future__ import annotations
+
+import copy
 import json
 import logging
 import re
 from datetime import datetime
 from pathlib import Path
 
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from backend.config import settings
 from backend.llm_provider import get_langchain_llm
 
 logger = logging.getLogger("uvicorn")
 
-PROFILE_DIR = settings.base_dir / "data" / "user_profile"
-PROFILE_PATH = PROFILE_DIR / "profile.json"
-INSIGHTS_DIR = PROFILE_DIR / "insights"
-
-# ── Profile Schema ──
-
 DEFAULT_PROFILE = {
     "name": "",
     "target_role": "AI 应用开发实习生",
     "updated_at": "",
-
-    # 技术掌握度 (topic → {level: 1-5, notes: str})
     "topic_mastery": {},
-
-    # 薄弱点 (list of {point, topic, first_seen, last_seen, times_seen, improved})
     "weak_points": [],
-
-    # 强项 (list of {point, topic, first_seen})
     "strong_points": [],
-
-    # 表达与沟通特征
     "communication": {
-        "style": "",        # e.g. "回答偏短，缺少具体例子"
-        "habits": [],       # e.g. ["紧张时语速加快", "喜欢用类比解释"]
-        "suggestions": [],  # e.g. ["多用 STAR 法描述项目"]
+        "style": "",
+        "habits": [],
+        "suggestions": [],
     },
-
-    # 答题思维模式
     "thinking_patterns": {
-        "strengths": [],    # e.g. ["能用类比解释抽象概念", "项目描述有数据支撑"]
-        "gaps": [],         # e.g. ["对比类问题缺乏结构", "被追问 why 时容易卡住"]
+        "strengths": [],
+        "gaps": [],
     },
-
-    # 面试统计
     "stats": {
         "total_sessions": 0,
         "resume_sessions": 0,
         "drill_sessions": 0,
         "avg_score": 0,
-        "score_history": [],  # [{date, mode, topic, avg_score}]
+        "score_history": [],
     },
 }
 
-EXTRACT_PROMPT = """你是一个面试教练的分析引擎。根据面试对话记录，提取关于候选人的结构化洞察。
+EXTRACT_PROMPT = """你是一个面试复盘分析引擎。请根据候选人的本轮对话和评分结果，抽取结构化画像信息，只返回 JSON。
 
-## 候选人当前画像
+当前画像：
 {current_profile}
 
-## 本次面试记录
-模式: {mode}
-领域: {topic}
+本轮模式：{mode}
+本轮领域：{topic}
+
+对话记录：
 {transcript}
 
-## 评分记录（如有）
+评分记录：
 {scores}
 
-## 任务
-分析这次面试，提取以下信息，返回 JSON：
-
-```json
+返回结构：
 {{
-    "weak_points": [
-        {{"point": "对 Python GIL 的理解停留在表面", "topic": "python"}}
-    ],
-    "strong_points": [
-        {{"point": "RAG 架构描述清晰，有实战数据支撑", "topic": "rag"}}
-    ],
-    "topic_mastery": {{
-        "python": {{"notes": "基础扎实但高级特性（元类、描述符）薄弱"}}
-    }},
-    "communication_observations": {{
-        "style_update": "回答技术题时逻辑清晰，但项目描述缺少量化数据",
-        "new_habits": ["遇到不会的题会坦诚说不确定"],
-        "new_suggestions": ["项目经历多用数据指标（提升了XX%）来量化成果"]
-    }},
-    "thinking_patterns": {{
-        "new_strengths": ["能用类比解释复杂概念"],
-        "new_gaps": ["被追问'为什么这样设计'时缺乏推导过程", "对比类问题回答缺乏结构"]
-    }},
-    "session_summary": "本次 Python 专项训练，基础题表现好，但 GIL 和 GC 机制理解不够深入",
-    "dimension_scores": {{
-        "technical_depth": 6,
-        "project_articulation": 7,
-        "communication": 5,
-        "problem_solving": 6
-    }},
-    "avg_score": 6.0
+  "weak_points": [{{"point": "具体薄弱点", "topic": "topic_key"}}],
+  "strong_points": [{{"point": "具体亮点", "topic": "topic_key"}}],
+  "topic_mastery": {{
+    "{topic_key_example}": {{"notes": "一句话总结掌握情况"}}
+  }},
+  "communication_observations": {{
+    "style_update": "一句话描述表达风格变化",
+    "new_habits": ["新的表达习惯"],
+    "new_suggestions": ["新的改进建议"]
+  }},
+  "thinking_patterns": {{
+    "new_strengths": ["新的思维优势"],
+    "new_gaps": ["新的思维短板"]
+  }},
+  "session_summary": "本轮训练总结",
+  "dimension_scores": {{
+    "technical_depth": 0,
+    "project_articulation": 0,
+    "communication": 0,
+    "problem_solving": 0
+  }},
+  "avg_score": 0
 }}
-```
-
-## dimension_scores 评分说明（仅简历面试模式需要填写，专项训练留空即可）
-- technical_depth (1-10): 技术理解的深度，是真懂还是在背？能否说出 why？
-- project_articulation (1-10): 项目描述能力——设计思路、量化成果、技术权衡是否讲清楚
-- communication (1-10): 表达的清晰度、结构化程度、简洁性
-- problem_solving (1-10): 被追问时的分析推理能力，能否现场推导
-- avg_score = 四个维度的均值，保留一位小数
 
 规则：
-- 只提取本次面试中明确暴露的信息，不要猜测
-- 薄弱点要具体，不要泛泛说"XX不好"
-- 如果候选人对某个之前的薄弱点表现出了进步，在 strong_points 里标注
-- topic_mastery 只需提供 notes（一句话描述掌握情况），score 由算法计算，不需要你判断
-- 专项训练模式下 dimension_scores 可省略，只需给 avg_score
+- 只提取当前对话里有证据的信息，不要臆测。
+- 薄弱点和亮点必须具体，不能泛泛而谈。
+- `topic_mastery` 只写 notes，不要编造 level。
+- 专项训练模式下允许 `dimension_scores` 为空。
 """
 
 
+def _get_profile_dir(user_id: str) -> Path:
+    helper = getattr(settings, "get_profile_dir", None)
+    if callable(helper):
+        return helper(user_id)
+    return settings.base_dir / "data" / "user_profile" / user_id
 
-def _load_profile() -> dict:
-    if PROFILE_PATH.exists():
-        return json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
-    return DEFAULT_PROFILE.copy()
+
+def _get_profile_path(user_id: str) -> Path:
+    helper = getattr(settings, "get_profile_path", None)
+    if callable(helper):
+        return helper(user_id)
+    return _get_profile_dir(user_id) / "profile.json"
 
 
-def _save_profile(profile: dict):
-    PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+def _get_insights_dir(user_id: str) -> Path:
+    helper = getattr(settings, "get_insights_dir", None)
+    if callable(helper):
+        return helper(user_id)
+    return _get_profile_dir(user_id) / "insights"
+
+
+def _default_profile() -> dict:
+    return copy.deepcopy(DEFAULT_PROFILE)
+
+
+def _load_profile(user_id: str) -> dict:
+    profile_path = _get_profile_path(user_id)
+    if profile_path.exists():
+        return json.loads(profile_path.read_text(encoding="utf-8"))
+    return _default_profile()
+
+
+def _save_profile(user_id: str, profile: dict):
+    profile_dir = _get_profile_dir(user_id)
+    profile_dir.mkdir(parents=True, exist_ok=True)
     profile["updated_at"] = datetime.now().isoformat()
-    PROFILE_PATH.write_text(
+    _get_profile_path(user_id).write_text(
         json.dumps(profile, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
 
-def _save_insight(mode: str, topic: str, summary: str, raw_extraction: dict):
-    """Append daily insight file (OpenClaw-style daily log)."""
-    INSIGHTS_DIR.mkdir(parents=True, exist_ok=True)
+def _save_insight(user_id: str, mode: str, topic: str | None, summary: str, raw_extraction: dict):
+    insights_dir = _get_insights_dir(user_id)
+    insights_dir.mkdir(parents=True, exist_ok=True)
     today = datetime.now().strftime("%Y-%m-%d")
-    path = INSIGHTS_DIR / f"{today}.md"
+    path = insights_dir / f"{today}.md"
 
     time_str = datetime.now().strftime("%H:%M")
     entry = f"\n## {time_str} | {mode} | {topic or '综合'}\n\n{summary}\n"
 
     if raw_extraction.get("weak_points"):
-        entry += "\n**薄弱点:**\n"
-        for wp in raw_extraction["weak_points"]:
-            entry += f"- {wp['point']} ({wp.get('topic', '')})\n"
+        entry += "\n**薄弱点**\n"
+        for weak_point in raw_extraction["weak_points"]:
+            entry += f"- {weak_point['point']} ({weak_point.get('topic', '')})\n"
 
     if raw_extraction.get("strong_points"):
-        entry += "\n**亮点:**\n"
-        for sp in raw_extraction["strong_points"]:
-            entry += f"- {sp['point']} ({sp.get('topic', '')})\n"
+        entry += "\n**亮点**\n"
+        for strong_point in raw_extraction["strong_points"]:
+            entry += f"- {strong_point['point']} ({strong_point.get('topic', '')})\n"
 
     entry += "\n---\n"
-
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(entry)
-
-
-def get_profile() -> dict:
-    return _load_profile()
+    with open(path, "a", encoding="utf-8") as file:
+        file.write(entry)
 
 
-def get_topic_context_for_drill(topic: str) -> dict:
+def get_profile(user_id: str) -> dict:
+    return _load_profile(user_id)
+
+
+def get_topic_context_for_drill(user_id: str, topic: str) -> dict:
     """Get personalized context for drill question generation."""
-    profile = _load_profile()
+    profile = _load_profile(user_id)
 
     mastery = profile.get("topic_mastery", {}).get(topic, {})
     mastery_score = mastery.get("score", mastery.get("level", 0) * 20)
     mastery_info = (
-        f"{mastery_score}/100 — {mastery.get('notes', '')}"
+        f"{mastery_score}/100 - {mastery.get('notes', '')}"
         if mastery_score > 0
         else "新领域，暂无历史数据"
     )
 
-    # Weak points for this topic
     topic_weak = [
-        w["point"] for w in profile.get("weak_points", [])
-        if w.get("topic") == topic and not w.get("improved")
+        weak_point["point"]
+        for weak_point in profile.get("weak_points", [])
+        if weak_point.get("topic") == topic and not weak_point.get("improved")
     ]
 
-    # Recent questions from score_history for this topic
     recent_questions = [
-        h.get("question", "")
-        for h in profile.get("stats", {}).get("score_history", [])
-        if h.get("topic") == topic and h.get("question")
-    ][-20:]  # last 20
+        history.get("question", "")
+        for history in profile.get("stats", {}).get("score_history", [])
+        if history.get("topic") == topic and history.get("question")
+    ][-20:]
 
-    # Semantic retrieval of past insights for this topic
     past_insights = []
     try:
         from backend.vector_memory import search_memory
+
         results = search_memory(
+            user_id=user_id,
             query=f"{topic} 面试薄弱点 常见错误",
             chunk_types=["session_summary", "insight"],
             topic=topic,
             top_k=3,
         )
-        past_insights = [r["content"] for r in results if r["score"] > 0.3]
+        past_insights = [result["content"] for result in results if result["score"] > 0.3]
     except Exception:
-        pass  # vector table may not exist yet
+        pass
 
     return {
         "mastery_info": mastery_info,
@@ -218,216 +208,231 @@ def get_topic_context_for_drill(topic: str) -> dict:
 
 
 def update_profile_realtime(
+    user_id: str,
     mode: str,
     topic: str | None,
     score_entry: dict | None = None,
     weak_point: str | None = None,
 ):
-    """Lightweight per-answer profile update — no LLM call, just save the data."""
-    profile = _load_profile()
+    """Lightweight profile update without an LLM call."""
+    profile = _load_profile(user_id)
     now = datetime.now().isoformat()
 
-    # Record score
     if score_entry and score_entry.get("score") is not None:
         history = profile.setdefault("stats", {}).setdefault("score_history", [])
-        history.append({
-            "date": now[:10],
-            "mode": mode,
-            "topic": topic,
-            "avg_score": score_entry["score"],
-            "question": score_entry.get("question", "")[:80],
-            "assessment": score_entry.get("assessment", ""),
-        })
-        # Rolling average
-        recent = [h["avg_score"] for h in history[-30:] if h.get("avg_score")]
+        history.append(
+            {
+                "date": now[:10],
+                "mode": mode,
+                "topic": topic,
+                "avg_score": score_entry["score"],
+                "question": score_entry.get("question", "")[:80],
+                "assessment": score_entry.get("assessment", ""),
+            }
+        )
+        recent = [item["avg_score"] for item in history[-30:] if item.get("avg_score")]
         if recent:
             profile["stats"]["avg_score"] = round(sum(recent) / len(recent), 1)
 
-    # Record weak point (semantic matching)
     if weak_point:
         from backend.vector_memory import find_similar_weak_point
-        match_idx = find_similar_weak_point(weak_point, profile.get("weak_points", []))
+
+        match_idx = find_similar_weak_point(user_id, weak_point, profile.get("weak_points", []))
         if match_idx is not None:
             profile["weak_points"][match_idx]["times_seen"] = profile["weak_points"][match_idx].get("times_seen", 1) + 1
             profile["weak_points"][match_idx]["last_seen"] = now
         else:
-            profile.setdefault("weak_points", []).append({
-                "point": weak_point,
-                "topic": topic or "",
-                "first_seen": now,
-                "last_seen": now,
-                "times_seen": 1,
-                "improved": False,
-            })
+            profile.setdefault("weak_points", []).append(
+                {
+                    "point": weak_point,
+                    "topic": topic or "",
+                    "first_seen": now,
+                    "last_seen": now,
+                    "times_seen": 1,
+                    "improved": False,
+                }
+            )
 
-    # Track that we have activity (for profile page display)
     profile.setdefault("stats", {}).setdefault("total_answers", 0)
     profile["stats"]["total_answers"] = profile["stats"].get("total_answers", 0) + 1
+    _save_profile(user_id, profile)
 
-    _save_profile(profile)
 
-
-def get_profile_summary() -> str:
-    """Generate a concise summary for injection into interviewer prompts."""
-    profile = _load_profile()
+def get_profile_summary(user_id: str) -> str:
+    """Generate a concise summary for interview prompts."""
+    profile = _load_profile(user_id)
 
     parts = []
     if profile.get("weak_points"):
-        active_weak = [w for w in profile["weak_points"] if not w.get("improved")]
+        active_weak = [weak_point for weak_point in profile["weak_points"] if not weak_point.get("improved")]
         if active_weak:
-            points = ", ".join(w["point"] for w in active_weak[:8])
-            parts.append(f"已知薄弱点: {points}")
+            parts.append(f"已知薄弱点: {', '.join(item['point'] for item in active_weak[:8])}")
 
     if profile.get("strong_points"):
-        points = ", ".join(s["point"] for s in profile["strong_points"][:5])
-        parts.append(f"强项: {points}")
+        parts.append(f"亮点: {', '.join(item['point'] for item in profile['strong_points'][:5])}")
 
     if profile.get("communication", {}).get("style"):
         parts.append(f"沟通风格: {profile['communication']['style']}")
 
-    tp = profile.get("thinking_patterns", {})
-    if tp.get("gaps"):
-        parts.append(f"思维短板: {', '.join(tp['gaps'][:5])}")
-    if tp.get("strengths"):
-        parts.append(f"思维优势: {', '.join(tp['strengths'][:5])}")
+    thinking_patterns = profile.get("thinking_patterns", {})
+    if thinking_patterns.get("gaps"):
+        parts.append(f"思维短板: {', '.join(thinking_patterns['gaps'][:5])}")
+    if thinking_patterns.get("strengths"):
+        parts.append(f"思维优势: {', '.join(thinking_patterns['strengths'][:5])}")
 
     if profile.get("stats", {}).get("total_sessions"):
-        stats = profile["stats"]
-        parts.append(f"已完成 {stats['total_sessions']} 次模拟面试")
+        parts.append(f"已完成 {profile['stats']['total_sessions']} 次训练")
 
     if profile.get("topic_mastery"):
         mastery = ", ".join(
-            f"{t}: {v.get('score', v.get('level', 0) * 20)}/100"
-            for t, v in profile["topic_mastery"].items()
+            f"{topic}: {item.get('score', item.get('level', 0) * 20)}/100"
+            for topic, item in profile["topic_mastery"].items()
         )
         parts.append(f"掌握度: {mastery}")
 
     return "\n".join(parts) if parts else "新用户，暂无历史数据"
 
 
-def get_profile_summary_for_drill() -> str:
-    """Concise summary for drill question generation — only cross-topic info."""
-    profile = _load_profile()
+def get_profile_summary_for_drill(user_id: str) -> str:
+    """Concise summary for drill generation, focused on cross-topic signals."""
+    profile = _load_profile(user_id)
     parts = []
 
     if profile.get("communication", {}).get("style"):
         parts.append(f"沟通风格: {profile['communication']['style']}")
 
-    tp = profile.get("thinking_patterns", {})
-    if tp.get("gaps"):
-        parts.append(f"思维短板: {', '.join(tp['gaps'][:5])}")
-    if tp.get("strengths"):
-        parts.append(f"思维优势: {', '.join(tp['strengths'][:5])}")
+    thinking_patterns = profile.get("thinking_patterns", {})
+    if thinking_patterns.get("gaps"):
+        parts.append(f"思维短板: {', '.join(thinking_patterns['gaps'][:5])}")
+    if thinking_patterns.get("strengths"):
+        parts.append(f"思维优势: {', '.join(thinking_patterns['strengths'][:5])}")
 
     if profile.get("stats", {}).get("total_sessions"):
-        parts.append(f"已完成 {profile['stats']['total_sessions']} 次模拟面试")
+        parts.append(f"已完成 {profile['stats']['total_sessions']} 次训练")
 
     return "\n".join(parts) if parts else "新用户，暂无历史数据"
 
 
-# ── Mem0-style LLM profile update ──
-
 def _parse_json_safe(content: str) -> dict | list:
-    """Parse JSON from LLM response, handling markdown code blocks."""
     content = content.strip()
     try:
         return json.loads(content)
     except json.JSONDecodeError:
         pass
-    m = re.search(r"```(?:json)?\s*\n?([\s\S]*?)\n?```", content)
-    if m:
+
+    match = re.search(r"```(?:json)?\s*\n?([\s\S]*?)\n?```", content)
+    if match:
         try:
-            return json.loads(m.group(1).strip())
+            return json.loads(match.group(1).strip())
         except json.JSONDecodeError:
             pass
-    for i, c in enumerate(content):
-        if c in ("[", "{"):
+
+    for index, char in enumerate(content):
+        if char in ("[", "{"):
             try:
-                return json.loads(content[i:])
+                return json.loads(content[index:])
             except json.JSONDecodeError:
                 pass
             break
+
     raise json.JSONDecodeError("No valid JSON found", content, 0)
 
 
 def _apply_memory_ops(profile: dict, ops: dict, topic: str | None, now: str):
-    """Execute LLM-decided ADD/UPDATE/NOOP/IMPROVE operations on profile."""
     weak_points = profile.setdefault("weak_points", [])
 
     for op in ops.get("weak_point_ops", []):
         action = op.get("action", "NOOP")
         if action == "ADD":
-            weak_points.append({
-                "point": op["point"],
-                "topic": op.get("topic", topic or ""),
-                "first_seen": now, "last_seen": now,
-                "times_seen": 1, "improved": False,
-            })
+            weak_points.append(
+                {
+                    "point": op["point"],
+                    "topic": op.get("topic", topic or ""),
+                    "first_seen": now,
+                    "last_seen": now,
+                    "times_seen": 1,
+                    "improved": False,
+                }
+            )
         elif action == "UPDATE":
-            idx = op.get("index")
-            if idx is not None and 0 <= idx < len(weak_points):
-                wp = weak_points[idx]
+            weak_index = op.get("index")
+            if weak_index is not None and 0 <= weak_index < len(weak_points):
+                weak_point = weak_points[weak_index]
                 if op.get("new_point"):
-                    wp["point"] = op["new_point"]
-                wp["times_seen"] = wp.get("times_seen", 1) + 1
-                wp["last_seen"] = now
+                    weak_point["point"] = op["new_point"]
+                weak_point["times_seen"] = weak_point.get("times_seen", 1) + 1
+                weak_point["last_seen"] = now
 
-    for imp in ops.get("improvements", []):
-        idx = imp.get("weak_index")
-        if idx is not None and 0 <= idx < len(weak_points):
-            weak_points[idx]["improved"] = True
-            weak_points[idx]["improved_at"] = now
+    for improvement in ops.get("improvements", []):
+        weak_index = improvement.get("weak_index")
+        if weak_index is not None and 0 <= weak_index < len(weak_points):
+            weak_points[weak_index]["improved"] = True
+            weak_points[weak_index]["improved_at"] = now
 
-    existing_strong = {s["point"] for s in profile.get("strong_points", [])}
+    existing_strong = {item["point"] for item in profile.get("strong_points", [])}
     for op in ops.get("strong_point_ops", []):
         if op.get("action") == "ADD" and op.get("point") and op["point"] not in existing_strong:
-            profile.setdefault("strong_points", []).append({
-                "point": op["point"],
-                "topic": op.get("topic", topic or ""),
-                "first_seen": now,
-            })
+            profile.setdefault("strong_points", []).append(
+                {
+                    "point": op["point"],
+                    "topic": op.get("topic", topic or ""),
+                    "first_seen": now,
+                }
+            )
 
 
-def _deterministic_update(profile: dict, new_weak: list, new_strong: list, topic: str | None, now: str):
-    """Fallback: vector cosine dedup when LLM parse fails."""
+def _deterministic_update(
+    profile: dict,
+    user_id: str,
+    new_weak: list,
+    new_strong: list,
+    topic: str | None,
+    now: str,
+):
     from backend.vector_memory import find_similar_weak_point
 
-    for wp in new_weak:
-        point = wp.get("point", wp) if isinstance(wp, dict) else str(wp)
-        match_idx = find_similar_weak_point(point, profile.get("weak_points", []))
+    for weak_point in new_weak:
+        point = weak_point.get("point", weak_point) if isinstance(weak_point, dict) else str(weak_point)
+        match_idx = find_similar_weak_point(user_id, point, profile.get("weak_points", []))
         if match_idx is not None:
             profile["weak_points"][match_idx]["times_seen"] = profile["weak_points"][match_idx].get("times_seen", 1) + 1
             profile["weak_points"][match_idx]["last_seen"] = now
         else:
-            profile.setdefault("weak_points", []).append({
-                "point": point,
-                "topic": wp.get("topic", topic) if isinstance(wp, dict) else (topic or ""),
-                "first_seen": now, "last_seen": now,
-                "times_seen": 1, "improved": False,
-            })
+            profile.setdefault("weak_points", []).append(
+                {
+                    "point": point,
+                    "topic": weak_point.get("topic", topic) if isinstance(weak_point, dict) else (topic or ""),
+                    "first_seen": now,
+                    "last_seen": now,
+                    "times_seen": 1,
+                    "improved": False,
+                }
+            )
 
-    for sp in new_strong:
-        sp_text = sp.get("point", sp) if isinstance(sp, dict) else str(sp)
-        for w in profile.get("weak_points", []):
-            if w.get("topic") == (sp.get("topic") if isinstance(sp, dict) else topic) and not w.get("improved"):
-                w["improved"] = True
-                w["improved_at"] = now
+    for strong_point in new_strong:
+        point_text = strong_point.get("point", strong_point) if isinstance(strong_point, dict) else str(strong_point)
+        for weak_point in profile.get("weak_points", []):
+            target_topic = strong_point.get("topic") if isinstance(strong_point, dict) else topic
+            if weak_point.get("topic") == target_topic and not weak_point.get("improved"):
+                weak_point["improved"] = True
+                weak_point["improved_at"] = now
                 break
-        existing = {s["point"] for s in profile.get("strong_points", [])}
-        if sp_text not in existing:
-            profile.setdefault("strong_points", []).append({
-                "point": sp_text,
-                "topic": sp.get("topic") if isinstance(sp, dict) else (topic or ""),
-                "first_seen": now,
-            })
+
+        existing = {item["point"] for item in profile.get("strong_points", [])}
+        if point_text not in existing:
+            profile.setdefault("strong_points", []).append(
+                {
+                    "point": point_text,
+                    "topic": strong_point.get("topic") if isinstance(strong_point, dict) else (topic or ""),
+                    "first_seen": now,
+                }
+            )
 
 
-def _update_mastery(profile: dict, topic: str | None, mastery_data: dict, now: str,
-                    session_weight: float = 0.7):
-    """Update topic mastery (0-100 scale). session_weight controls merge ratio."""
+def _update_mastery(profile: dict, topic: str | None, mastery_data: dict, now: str, session_weight: float = 0.7):
     if not mastery_data:
         return
-    # {score, notes} → single topic; {topic_key: {score, notes}} → multi-topic
+
     if "score" in mastery_data or "level" in mastery_data:
         if not topic:
             return
@@ -435,13 +440,12 @@ def _update_mastery(profile: dict, topic: str | None, mastery_data: dict, now: s
     else:
         entries = mastery_data
 
-    for t, data in entries.items():
+    for mastery_topic, data in entries.items():
         if not isinstance(data, dict):
             continue
-        existing = profile.setdefault("topic_mastery", {}).setdefault(t, {})
+        existing = profile.setdefault("topic_mastery", {}).setdefault(mastery_topic, {})
         new_score = data.get("score")
         if new_score is not None:
-            # Backward compat: convert old Lv1-5 to 0-100
             old_score = existing.get("score", existing.get("level", 0) * 20)
             merged = round(old_score * (1 - session_weight) + new_score * session_weight, 1)
             existing["score"] = merged
@@ -451,40 +455,42 @@ def _update_mastery(profile: dict, topic: str | None, mastery_data: dict, now: s
         existing["last_assessed"] = now
 
 
-def _update_communication(profile: dict, comm: dict):
-    """Append communication observations."""
-    if not comm:
+def _update_communication(profile: dict, communication: dict):
+    if not communication:
         return
-    if comm.get("style_update"):
-        profile.setdefault("communication", {})["style"] = comm["style_update"]
-    for habit in comm.get("new_habits", []):
+    if communication.get("style_update"):
+        profile.setdefault("communication", {})["style"] = communication["style_update"]
+    for habit in communication.get("new_habits", []):
         habits = profile.setdefault("communication", {}).setdefault("habits", [])
         if habit not in habits:
             habits.append(habit)
-    for sug in comm.get("new_suggestions", []):
+    for suggestion in communication.get("new_suggestions", []):
         suggestions = profile.setdefault("communication", {}).setdefault("suggestions", [])
-        if sug not in suggestions:
-            suggestions.append(sug)
+        if suggestion not in suggestions:
+            suggestions.append(suggestion)
 
 
 def _update_thinking_patterns(profile: dict, patterns: dict):
-    """Append thinking pattern observations."""
     if not patterns:
         return
-    tp = profile.setdefault("thinking_patterns", {"strengths": [], "gaps": []})
-    for s in patterns.get("new_strengths", []):
-        if s not in tp["strengths"]:
-            tp["strengths"].append(s)
-    for g in patterns.get("new_gaps", []):
-        if g not in tp["gaps"]:
-            tp["gaps"].append(g)
+    thinking_patterns = profile.setdefault("thinking_patterns", {"strengths": [], "gaps": []})
+    for strength in patterns.get("new_strengths", []):
+        if strength not in thinking_patterns["strengths"]:
+            thinking_patterns["strengths"].append(strength)
+    for gap in patterns.get("new_gaps", []):
+        if gap not in thinking_patterns["gaps"]:
+            thinking_patterns["gaps"].append(gap)
 
 
 def _update_stats(
-    profile: dict, mode: str, topic: str | None, avg_score: float | None,
-    now: str, answer_count: int = 0, dimension_scores: dict | None = None,
+    profile: dict,
+    mode: str,
+    topic: str | None,
+    avg_score: float | None,
+    now: str,
+    answer_count: int = 0,
+    dimension_scores: dict | None = None,
 ):
-    """Update session statistics with per-mode averages."""
     stats = profile.setdefault("stats", {})
     stats["total_sessions"] = stats.get("total_sessions", 0) + 1
     if mode == "resume":
@@ -495,29 +501,28 @@ def _update_stats(
     if answer_count:
         stats["total_answers"] = stats.get("total_answers", 0) + answer_count
 
-    if avg_score:
+    if avg_score is not None:
         history = stats.setdefault("score_history", [])
         entry = {"date": now[:10], "mode": mode, "topic": topic, "avg_score": avg_score}
         if dimension_scores:
             entry["dimension_scores"] = dimension_scores
         history.append(entry)
 
-        # Per-mode rolling averages
-        drill_scores = [h["avg_score"] for h in history if h.get("mode") == "topic_drill" and h.get("avg_score")][-20:]
-        resume_scores = [h["avg_score"] for h in history if h.get("mode") == "resume" and h.get("avg_score")][-10:]
+        drill_scores = [item["avg_score"] for item in history if item.get("mode") == "topic_drill" and item.get("avg_score") is not None][-20:]
+        resume_scores = [item["avg_score"] for item in history if item.get("mode") == "resume" and item.get("avg_score") is not None][-10:]
 
         if drill_scores:
             stats["drill_avg_score"] = round(sum(drill_scores) / len(drill_scores), 1)
         if resume_scores:
             stats["resume_avg_score"] = round(sum(resume_scores) / len(resume_scores), 1)
 
-        # Combined: proportional weighted average
         all_recent = drill_scores + resume_scores
         if all_recent:
             stats["avg_score"] = round(sum(all_recent) / len(all_recent), 1)
 
 
 async def llm_update_profile(
+    user_id: str,
     mode: str,
     topic: str | None,
     new_weak_points: list[dict],
@@ -531,37 +536,36 @@ async def llm_update_profile(
     session_weight: float = 0.7,
     dimension_scores: dict | None = None,
 ):
-    """Mem0-style profile update: LLM decides ADD/UPDATE/NOOP for each fact."""
     from backend.prompts.interviewer import PROFILE_UPDATE_PROMPT
 
-    profile = _load_profile()
+    profile = _load_profile(user_id)
     now = datetime.now().isoformat()
-
-    # ── LLM-based update for weak/strong points ──
     has_new_facts = bool(new_weak_points or new_strong_points)
 
     if has_new_facts:
-        # Format existing points with indices for LLM reference
         existing_weak_lines = []
-        for i, wp in enumerate(profile.get("weak_points", [])):
-            status = "已改善" if wp.get("improved") else f"出现{wp.get('times_seen', 1)}次"
+        for index, weak_point in enumerate(profile.get("weak_points", [])):
+            status = "已改进" if weak_point.get("improved") else f"出现 {weak_point.get('times_seen', 1)} 次"
             existing_weak_lines.append(
-                f"[{i}] {wp['point']} (领域: {wp.get('topic', '?')}, {status})"
+                f"[{index}] {weak_point['point']} (领域: {weak_point.get('topic', '?')}, {status})"
             )
-        existing_strong_lines = []
-        for i, sp in enumerate(profile.get("strong_points", [])):
-            existing_strong_lines.append(f"[{i}] {sp['point']} (领域: {sp.get('topic', '?')})")
+
+        existing_strong_lines = [
+            f"[{index}] {strong_point['point']} (领域: {strong_point.get('topic', '?')})"
+            for index, strong_point in enumerate(profile.get("strong_points", []))
+        ]
 
         new_weak_lines = []
-        for wp in new_weak_points:
-            point = wp.get("point", wp) if isinstance(wp, dict) else str(wp)
-            t = wp.get("topic", topic) if isinstance(wp, dict) else topic
-            new_weak_lines.append(f"- {point} (领域: {t})")
+        for weak_point in new_weak_points:
+            point = weak_point.get("point", weak_point) if isinstance(weak_point, dict) else str(weak_point)
+            target_topic = weak_point.get("topic", topic) if isinstance(weak_point, dict) else topic
+            new_weak_lines.append(f"- {point} (领域: {target_topic})")
+
         new_strong_lines = []
-        for sp in new_strong_points:
-            point = sp.get("point", sp) if isinstance(sp, dict) else str(sp)
-            t = sp.get("topic", topic) if isinstance(sp, dict) else topic
-            new_strong_lines.append(f"- {point} (领域: {t})")
+        for strong_point in new_strong_points:
+            point = strong_point.get("point", strong_point) if isinstance(strong_point, dict) else str(strong_point)
+            target_topic = strong_point.get("topic", topic) if isinstance(strong_point, dict) else topic
+            new_strong_lines.append(f"- {point} (领域: {target_topic})")
 
         prompt = PROFILE_UPDATE_PROMPT.format(
             existing_weak="\n".join(existing_weak_lines) or "暂无",
@@ -571,10 +575,12 @@ async def llm_update_profile(
         )
 
         llm = get_langchain_llm()
-        response = llm.invoke([
-            SystemMessage(content="你是画像更新引擎。只返回 JSON。"),
-            HumanMessage(content=prompt),
-        ])
+        response = llm.invoke(
+            [
+                SystemMessage(content="你是画像更新引擎。只返回 JSON。"),
+                HumanMessage(content=prompt),
+            ]
+        )
 
         try:
             ops = _parse_json_safe(response.content)
@@ -582,26 +588,33 @@ async def llm_update_profile(
                 _apply_memory_ops(profile, ops, topic, now)
             else:
                 raise ValueError(f"Expected dict, got {type(ops)}")
-        except (json.JSONDecodeError, ValueError, KeyError) as e:
-            logger.warning(f"Profile update LLM parse failed ({e}), falling back to deterministic")
-            _deterministic_update(profile, new_weak_points, new_strong_points, topic, now)
+        except (json.JSONDecodeError, ValueError, KeyError) as exc:
+            logger.warning("Profile update parse failed (%s), falling back to deterministic update.", exc)
+            _deterministic_update(profile, user_id, new_weak_points, new_strong_points, topic, now)
 
-    # ── Deterministic updates for mastery / communication / thinking / stats ──
     _update_mastery(profile, topic, topic_mastery, now, session_weight)
     _update_communication(profile, communication)
     _update_thinking_patterns(profile, thinking_patterns)
     _update_stats(profile, mode, topic, avg_score, now, answer_count, dimension_scores)
 
-    _save_profile(profile)
-    _save_insight(mode=mode, topic=topic, summary=session_summary, raw_extraction={
-        "weak_points": new_weak_points,
-        "strong_points": new_strong_points,
-    })
+    _save_profile(user_id, profile)
+    _save_insight(
+        user_id=user_id,
+        mode=mode,
+        topic=topic,
+        summary=session_summary,
+        raw_extraction={
+            "weak_points": new_weak_points,
+            "strong_points": new_strong_points,
+        },
+    )
 
-    # Index into vector memory for future semantic retrieval
     from backend.vector_memory import index_session_memory
+
     index_session_memory(
-        session_id=None, topic=topic,
+        user_id=user_id,
+        session_id=None,
+        topic=topic,
         summary=session_summary,
         weak_points=new_weak_points,
         strong_points=new_strong_points,
@@ -610,43 +623,47 @@ async def llm_update_profile(
 
 
 async def update_profile_after_interview(
+    user_id: str,
     mode: str,
     topic: str | None,
     messages: list,
     scores: list[dict] | None = None,
 ) -> dict:
-    """Mem0-style two-stage pipeline: Extract → Update."""
-    profile = _load_profile()
+    """Two-stage profile update: extract then update."""
+    profile = _load_profile(user_id)
     llm = get_langchain_llm()
 
-    # ── Stage 1: Extract insights ──
     transcript_lines = []
-    for msg in messages:
-        if hasattr(msg, "content"):
-            if isinstance(msg, HumanMessage):
-                transcript_lines.append(f"候选人: {msg.content}")
-            elif hasattr(msg, "content") and not isinstance(msg, SystemMessage):
-                transcript_lines.append(f"面试官: {msg.content}")
+    for message in messages:
+        if hasattr(message, "content"):
+            if isinstance(message, HumanMessage):
+                transcript_lines.append(f"候选人: {message.content}")
+            elif not isinstance(message, SystemMessage):
+                transcript_lines.append(f"面试官: {message.content}")
 
     score_text = ""
     if scores:
         score_text = "\n".join(
-            f"- Q: {s.get('question', '?')} → {s.get('score', '?')}/10 ({s.get('assessment', '')})"
-            for s in scores
+            f"- Q: {score.get('question', '?')} -> {score.get('score', '?')}/10 ({score.get('assessment', '')})"
+            for score in scores
         )
 
-    extract_msg = EXTRACT_PROMPT.format(
+    topic_key_example = topic or "topic_key"
+    extract_message = EXTRACT_PROMPT.format(
         current_profile=json.dumps(profile, ensure_ascii=False)[:2000],
         mode=mode,
         topic=topic or "综合",
-        transcript="\n".join(transcript_lines[-60:]),  # last 60 lines
+        transcript="\n".join(transcript_lines[-60:]),
         scores=score_text or "无",
+        topic_key_example=topic_key_example,
     )
 
-    response = llm.invoke([
-        SystemMessage(content="你是面试分析引擎。只返回 JSON。"),
-        HumanMessage(content=extract_msg),
-    ])
+    response = llm.invoke(
+        [
+            SystemMessage(content="你是面试分析引擎。只返回 JSON。"),
+            HumanMessage(content=extract_message),
+        ]
+    )
 
     try:
         content = response.content.strip()
@@ -659,8 +676,8 @@ async def update_profile_after_interview(
     except (json.JSONDecodeError, IndexError):
         extraction = {"session_summary": "提取失败", "weak_points": [], "strong_points": []}
 
-    # ── Stage 2: LLM-based Update (Mem0 style) ──
     await llm_update_profile(
+        user_id=user_id,
         mode=mode,
         topic=topic,
         new_weak_points=extraction.get("weak_points", []),
@@ -672,5 +689,4 @@ async def update_profile_after_interview(
         avg_score=extraction.get("avg_score"),
         dimension_scores=extraction.get("dimension_scores"),
     )
-
     return extraction

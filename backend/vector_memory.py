@@ -1,10 +1,7 @@
-"""向量记忆系统 — 语义检索 + 时间衰减 + 薄弱点语义去重。
+"""Vector memory helpers backed by SQLite and numpy similarity search."""
 
-设计：
-- SQLite BLOB 存 bge-m3 embedding (1024-dim float32)
-- numpy cosine similarity 搜索（百级向量，sub-ms）
-- profile.json 仍是真相源，向量索引是加速层
-"""
+from __future__ import annotations
+
 import json
 import logging
 import sqlite3
@@ -19,9 +16,9 @@ logger = logging.getLogger("uvicorn")
 
 DB_PATH = settings.db_path
 EMBEDDING_DIM = 1024
-SIMILARITY_THRESHOLD = 0.75  # weak point dedup
-TIME_DECAY_HALF_LIFE = 14.0  # days
-TIME_DECAY_WEIGHT = 0.3      # max 30% score reduction from age
+SIMILARITY_THRESHOLD = 0.75
+TIME_DECAY_HALF_LIFE = 14.0
+TIME_DECAY_WEIGHT = 0.3
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -32,11 +29,13 @@ def _get_conn() -> sqlite3.Connection:
 
 
 def init_memory_table():
-    """Create memory_vectors table. Called once at startup."""
+    """Create or migrate the memory_vectors table."""
     conn = _get_conn()
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS memory_vectors (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     TEXT,
             chunk_type  TEXT NOT NULL,
             content     TEXT NOT NULL,
             topic       TEXT,
@@ -45,18 +44,24 @@ def init_memory_table():
             embedding   BLOB NOT NULL,
             created_at  TEXT DEFAULT CURRENT_TIMESTAMP
         )
-    """)
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_mv_type ON memory_vectors(chunk_type)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_mv_topic ON memory_vectors(topic)")
+        """
+    )
+    try:
+        conn.execute("SELECT user_id FROM memory_vectors LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE memory_vectors ADD COLUMN user_id TEXT")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mv_user_type ON memory_vectors(user_id, chunk_type)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mv_user_topic ON memory_vectors(user_id, topic)"
+    )
     conn.commit()
     conn.close()
     logger.info("memory_vectors table ready.")
 
 
-# ── Embedding helpers ──
-
 def _embed(text: str) -> np.ndarray:
-    """Embed text using singleton bge-m3. Returns float32 array (1024,)."""
     embed_model = get_embedding()
     vec = embed_model.get_text_embedding(text)
     return np.array(vec, dtype=np.float32)
@@ -71,7 +76,6 @@ def _deserialize(blob: bytes) -> np.ndarray:
 
 
 def _cosine_similarity(query_vec: np.ndarray, matrix: np.ndarray) -> np.ndarray:
-    """Vectorized cosine similarity. query_vec: (D,), matrix: (N, D) → (N,)."""
     query_norm = np.linalg.norm(query_vec)
     if query_norm < 1e-10:
         return np.zeros(matrix.shape[0])
@@ -81,19 +85,16 @@ def _cosine_similarity(query_vec: np.ndarray, matrix: np.ndarray) -> np.ndarray:
 
 
 def _time_decay(created_at: str) -> float:
-    """Exponential time decay. Returns multiplier in [0.5, 1.0] range."""
     try:
         age = (datetime.now() - datetime.fromisoformat(created_at)).total_seconds() / 86400
     except (ValueError, TypeError):
         return 1.0
     decay = 0.5 ** (max(age, 0) / TIME_DECAY_HALF_LIFE)
-    # Blend: score * (weight * decay + (1 - weight))
     return TIME_DECAY_WEIGHT * decay + (1 - TIME_DECAY_WEIGHT)
 
 
-# ── Write ──
-
 def index_session_memory(
+    user_id: str,
     session_id: str | None,
     topic: str | None,
     summary: str,
@@ -112,7 +113,15 @@ def index_session_memory(
         point = wp.get("point", wp) if isinstance(wp, dict) else str(wp)
         if point:
             meta = json.dumps({"topic": wp.get("topic", topic) if isinstance(wp, dict) else topic})
-            chunks.append(("weak_point", point, wp.get("topic", topic) if isinstance(wp, dict) else topic, session_id, meta))
+            chunks.append(
+                (
+                    "weak_point",
+                    point,
+                    wp.get("topic", topic) if isinstance(wp, dict) else topic,
+                    session_id,
+                    meta,
+                )
+            )
 
     if insight_text:
         chunks.append(("insight", insight_text[:2000], topic, session_id, "{}"))
@@ -121,38 +130,38 @@ def index_session_memory(
         conn.close()
         return
 
-    # Batch embed
     embed_model = get_embedding()
-    texts = [c[1] for c in chunks]
+    texts = [chunk[1] for chunk in chunks]
     vectors = embed_model.get_text_embedding_batch(texts)
 
     now = datetime.now().isoformat()
-    for (chunk_type, content, t, sid, meta), vec in zip(chunks, vectors):
+    for (chunk_type, content, chunk_topic, sid, meta), vec in zip(chunks, vectors):
         blob = _serialize(np.array(vec, dtype=np.float32))
         conn.execute(
-            "INSERT INTO memory_vectors (chunk_type, content, topic, session_id, metadata, embedding, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (chunk_type, content, t, sid, meta, blob, now),
+            """
+            INSERT INTO memory_vectors (
+                user_id, chunk_type, content, topic, session_id, metadata, embedding, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, chunk_type, content, chunk_topic, sid, meta, blob, now),
         )
 
     conn.commit()
     conn.close()
-    logger.info(f"Indexed {len(chunks)} memory chunks for session {session_id or 'unknown'}.")
+    logger.info("Indexed %s memory chunks for user %s.", len(chunks), user_id)
 
-
-# ── Read ──
 
 def search_memory(
+    user_id: str,
     query: str,
     chunk_types: list[str] | None = None,
     topic: str | None = None,
     top_k: int = 5,
 ) -> list[dict]:
-    """Semantic search with time decay. Returns [{content, chunk_type, topic, score, created_at}]."""
+    """Semantic search with time decay for one user."""
     conn = _get_conn()
-
-    # Build filter query
-    where = []
-    params = []
+    where = ["user_id = ?"]
+    params = [user_id]
     if chunk_types:
         placeholders = ",".join("?" for _ in chunk_types)
         where.append(f"chunk_type IN ({placeholders})")
@@ -161,9 +170,12 @@ def search_memory(
         where.append("topic = ?")
         params.append(topic)
 
-    where_clause = (" WHERE " + " AND ".join(where)) if where else ""
     rows = conn.execute(
-        f"SELECT id, chunk_type, content, topic, session_id, embedding, created_at FROM memory_vectors{where_clause}",
+        f"""
+        SELECT id, user_id, chunk_type, content, topic, session_id, embedding, created_at
+        FROM memory_vectors
+        WHERE {' AND '.join(where)}
+        """,
         params,
     ).fetchall()
     conn.close()
@@ -171,125 +183,131 @@ def search_memory(
     if not rows:
         return []
 
-    # Embed query
     query_vec = _embed(query)
-
-    # Build matrix and compute similarities
-    embeddings = np.stack([_deserialize(r["embedding"]) for r in rows])
+    embeddings = np.stack([_deserialize(row["embedding"]) for row in rows])
     similarities = _cosine_similarity(query_vec, embeddings)
 
-    # Apply time decay
     results = []
-    for i, row in enumerate(rows):
+    for index, row in enumerate(rows):
         decay = _time_decay(row["created_at"])
-        score = float(similarities[i]) * decay
-        results.append({
-            "content": row["content"],
-            "chunk_type": row["chunk_type"],
-            "topic": row["topic"],
-            "session_id": row["session_id"],
-            "score": score,
-            "created_at": row["created_at"],
-        })
+        score = float(similarities[index]) * decay
+        results.append(
+            {
+                "user_id": row["user_id"],
+                "content": row["content"],
+                "chunk_type": row["chunk_type"],
+                "topic": row["topic"],
+                "session_id": row["session_id"],
+                "score": score,
+                "created_at": row["created_at"],
+            }
+        )
 
-    results.sort(key=lambda x: x["score"], reverse=True)
+    results.sort(key=lambda item: item["score"], reverse=True)
     return results[:top_k]
 
 
 def find_similar_weak_point(
+    user_id: str,
     new_point: str,
     existing_points: list[dict],
     threshold: float = SIMILARITY_THRESHOLD,
 ) -> int | None:
-    """Find index of most similar existing weak point via embedding similarity.
-    Returns index into existing_points, or None if no match above threshold."""
+    """Find the nearest existing weak point for one user."""
     if not existing_points:
         return None
 
     conn = _get_conn()
     rows = conn.execute(
-        "SELECT content, embedding FROM memory_vectors WHERE chunk_type = 'weak_point'"
+        """
+        SELECT content, embedding
+        FROM memory_vectors
+        WHERE user_id = ? AND chunk_type = 'weak_point'
+        """,
+        (user_id,),
     ).fetchall()
     conn.close()
 
-    # Build lookup: content → embedding
-    cached = {}
-    for r in rows:
-        cached[r["content"]] = _deserialize(r["embedding"])
-
-    # Embed the new point
+    cached = {row["content"]: _deserialize(row["embedding"]) for row in rows}
     new_vec = _embed(new_point)
 
-    # Compare against each existing profile weak point
     best_idx = None
     best_score = -1.0
-
     points_to_embed = []
     points_indices = []
 
-    for i, wp in enumerate(existing_points):
-        point_text = wp.get("point", "") if isinstance(wp, dict) else str(wp)
+    for index, weak_point in enumerate(existing_points):
+        point_text = weak_point.get("point", "") if isinstance(weak_point, dict) else str(weak_point)
         if not point_text:
             continue
         if point_text in cached:
             sim = float(_cosine_similarity(new_vec, cached[point_text].reshape(1, -1))[0])
             if sim > best_score:
                 best_score = sim
-                best_idx = i
+                best_idx = index
         else:
             points_to_embed.append(point_text)
-            points_indices.append(i)
+            points_indices.append(index)
 
-    # Embed any uncached points
     if points_to_embed:
         embed_model = get_embedding()
-        vecs = embed_model.get_text_embedding_batch(points_to_embed)
-        for text, vec, idx in zip(points_to_embed, vecs, points_indices):
+        vectors = embed_model.get_text_embedding_batch(points_to_embed)
+        for text, vec, index in zip(points_to_embed, vectors, points_indices):
             vec_np = np.array(vec, dtype=np.float32)
             sim = float(_cosine_similarity(new_vec, vec_np.reshape(1, -1))[0])
             if sim > best_score:
                 best_score = sim
-                best_idx = idx
+                best_idx = index
 
     if best_score >= threshold:
         return best_idx
     return None
 
 
-# ── Maintenance ──
-
-def rebuild_index_from_profile():
-    """Rebuild weak_point vectors from current profile.json."""
+def rebuild_index_from_profile(user_id: str):
+    """Rebuild weak-point vectors from one user's profile."""
     from backend.memory import _load_profile
 
     conn = _get_conn()
-    conn.execute("DELETE FROM memory_vectors WHERE chunk_type = 'weak_point'")
+    conn.execute(
+        "DELETE FROM memory_vectors WHERE user_id = ? AND chunk_type = 'weak_point'",
+        (user_id,),
+    )
     conn.commit()
 
-    profile = _load_profile()
+    profile = _load_profile(user_id)
     weak_points = profile.get("weak_points", [])
 
     if not weak_points:
         conn.close()
         return
 
-    embed_model = get_embedding()
-    texts = [wp["point"] for wp in weak_points if wp.get("point")]
+    texts = [weak_point["point"] for weak_point in weak_points if weak_point.get("point")]
     if not texts:
         conn.close()
         return
 
+    embed_model = get_embedding()
     vectors = embed_model.get_text_embedding_batch(texts)
     now = datetime.now().isoformat()
 
-    for text, vec, wp in zip(texts, vectors, weak_points):
+    for text, vec, weak_point in zip(texts, vectors, weak_points):
         blob = _serialize(np.array(vec, dtype=np.float32))
-        meta = json.dumps({"topic": wp.get("topic", ""), "times_seen": wp.get("times_seen", 1)})
+        meta = json.dumps(
+            {
+                "topic": weak_point.get("topic", ""),
+                "times_seen": weak_point.get("times_seen", 1),
+            }
+        )
         conn.execute(
-            "INSERT INTO memory_vectors (chunk_type, content, topic, metadata, embedding, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            ("weak_point", text, wp.get("topic"), meta, blob, wp.get("first_seen", now)),
+            """
+            INSERT INTO memory_vectors (
+                user_id, chunk_type, content, topic, metadata, embedding, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, "weak_point", text, weak_point.get("topic"), meta, blob, weak_point.get("first_seen", now)),
         )
 
     conn.commit()
     conn.close()
-    logger.info(f"Rebuilt {len(texts)} weak_point vectors from profile.json.")
+    logger.info("Rebuilt %s weak_point vectors for user %s.", len(texts), user_id)

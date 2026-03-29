@@ -1,4 +1,7 @@
-"""题目关联图谱 — 从历史 drill 题目构建语义相似度图。"""
+"""Question relationship graph built from completed drill sessions."""
+
+from __future__ import annotations
+
 import hashlib
 import json
 import sqlite3
@@ -7,7 +10,7 @@ from datetime import datetime
 import numpy as np
 
 from backend.config import settings
-from backend.vector_memory import _embed, _serialize, _deserialize, _cosine_similarity
+from backend.vector_memory import _cosine_similarity, _deserialize, _serialize
 
 DB_PATH = settings.db_path
 SIMILARITY_THRESHOLD = 0.65
@@ -21,7 +24,8 @@ def _get_conn() -> sqlite3.Connection:
 
 
 def _init_question_embeddings_table(conn: sqlite3.Connection):
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS question_embeddings (
             question_hash TEXT PRIMARY KEY,
             topic         TEXT,
@@ -29,7 +33,8 @@ def _init_question_embeddings_table(conn: sqlite3.Connection):
             embedding     BLOB NOT NULL,
             created_at    TEXT DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+        """
+    )
     conn.commit()
 
 
@@ -37,38 +42,39 @@ def _hash_question(text: str) -> str:
     return hashlib.md5(text.encode("utf-8")).hexdigest()
 
 
-def _extract_questions(conn: sqlite3.Connection, topic: str) -> list[dict]:
-    """Extract all questions with scores from completed drill sessions for a topic."""
+def _extract_questions(conn: sqlite3.Connection, user_id: str, topic: str) -> list[dict]:
+    """Extract answered and scored drill questions for one user and topic."""
     rows = conn.execute(
-        "SELECT session_id, questions, scores, created_at FROM sessions "
-        "WHERE topic = ? AND mode = 'topic_drill' AND review IS NOT NULL "
-        "ORDER BY created_at ASC",
-        (topic,),
+        """
+        SELECT session_id, questions, scores, created_at
+        FROM sessions
+        WHERE user_id = ? AND topic = ? AND mode = 'topic_drill' AND review IS NOT NULL
+        ORDER BY created_at ASC
+        """,
+        (user_id, topic),
     ).fetchall()
 
-    # question_text → latest record (dedup by keeping last occurrence)
     seen: dict[str, dict] = {}
     for row in rows:
         questions = json.loads(row["questions"] or "[]")
         scores = json.loads(row["scores"] or "[]")
-        score_map = {s["question_id"]: s for s in scores if "question_id" in s}
+        score_map = {score["question_id"]: score for score in scores if "question_id" in score}
 
-        for q in questions:
-            text = q.get("question", "").strip()
+        for question in questions:
+            text = question.get("question", "").strip()
             if not text:
                 continue
-            qid = q.get("id")
-            sc = score_map.get(qid, {})
-            score_val = sc.get("score")
-            # Only include questions that were actually answered and scored
-            if not isinstance(score_val, (int, float)):
+            question_id = question.get("id")
+            score = score_map.get(question_id, {})
+            score_value = score.get("score")
+            if not isinstance(score_value, (int, float)):
                 continue
 
             seen[text] = {
                 "question": text,
-                "score": score_val,
-                "focus_area": q.get("focus_area", ""),
-                "difficulty": q.get("difficulty", 3),
+                "score": score_value,
+                "focus_area": question.get("focus_area", ""),
+                "difficulty": question.get("difficulty", 3),
                 "date": row["created_at"][:10] if row["created_at"] else "",
                 "session_id": row["session_id"],
             }
@@ -81,12 +87,12 @@ def _get_or_compute_embeddings(
     questions: list[dict],
     topic: str,
 ) -> np.ndarray:
-    """Return (N, 1024) embedding matrix. Uses cache table, computes missing."""
+    """Load cached embeddings or compute missing ones."""
+    from backend.llm_provider import get_embedding
+
     _init_question_embeddings_table(conn)
+    hashes = [_hash_question(question["question"]) for question in questions]
 
-    hashes = [_hash_question(q["question"]) for q in questions]
-
-    # Load cached
     cached: dict[str, np.ndarray] = {}
     if hashes:
         placeholders = ",".join("?" for _ in hashes)
@@ -94,82 +100,77 @@ def _get_or_compute_embeddings(
             f"SELECT question_hash, embedding FROM question_embeddings WHERE question_hash IN ({placeholders})",
             hashes,
         ).fetchall()
-        for r in rows:
-            cached[r["question_hash"]] = _deserialize(r["embedding"])
+        for row in rows:
+            cached[row["question_hash"]] = _deserialize(row["embedding"])
 
-    # Find missing
-    to_embed = []
-    to_embed_idx = []
-    for i, (h, q) in enumerate(zip(hashes, questions)):
-        if h not in cached:
-            to_embed.append(q["question"])
-            to_embed_idx.append(i)
+    missing_texts = []
+    missing_indexes = []
+    for index, (question_hash, question) in enumerate(zip(hashes, questions)):
+        if question_hash not in cached:
+            missing_texts.append(question["question"])
+            missing_indexes.append(index)
 
-    # Batch embed missing
-    if to_embed:
-        from backend.llm_provider import get_embedding
+    if missing_texts:
         embed_model = get_embedding()
-        vectors = embed_model.get_text_embedding_batch(to_embed)
+        vectors = embed_model.get_text_embedding_batch(missing_texts)
         now = datetime.now().isoformat()
-        for text, vec, idx in zip(to_embed, vectors, to_embed_idx):
+        for text, vec, index in zip(missing_texts, vectors, missing_indexes):
             vec_np = np.array(vec, dtype=np.float32)
-            h = hashes[idx]
-            cached[h] = vec_np
+            question_hash = hashes[index]
+            cached[question_hash] = vec_np
             conn.execute(
-                "INSERT OR REPLACE INTO question_embeddings (question_hash, topic, question_text, embedding, created_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (h, topic, text, _serialize(vec_np), now),
+                """
+                INSERT OR REPLACE INTO question_embeddings (
+                    question_hash, topic, question_text, embedding, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (question_hash, topic, text, _serialize(vec_np), now),
             )
         conn.commit()
 
-    # Build matrix in order
-    matrix = np.stack([cached[h] for h in hashes])
-    return matrix
+    return np.stack([cached[question_hash] for question_hash in hashes])
 
 
-def build_graph(topic: str) -> dict:
-    """Build question relationship graph for a topic.
-
-    Returns {"nodes": [...], "links": [...]}
-    """
+def build_graph(user_id: str, topic: str) -> dict:
+    """Build a question relationship graph for one user's topic history."""
     conn = _get_conn()
-    questions = _extract_questions(conn, topic)
+    questions = _extract_questions(conn, user_id, topic)
 
     if len(questions) < 2:
         conn.close()
         return {
-            "nodes": [
-                {"id": i, **q} for i, q in enumerate(questions)
-            ],
+            "nodes": [{"id": index, **question} for index, question in enumerate(questions)],
             "links": [],
         }
 
     embeddings = _get_or_compute_embeddings(conn, questions, topic)
     conn.close()
 
-    # Build nodes
     nodes = []
-    for i, q in enumerate(questions):
-        nodes.append({
-            "id": i,
-            "question": q["question"],
-            "score": q["score"],
-            "focus_area": q["focus_area"],
-            "difficulty": q["difficulty"],
-            "date": q["date"],
-        })
+    for index, question in enumerate(questions):
+        nodes.append(
+            {
+                "id": index,
+                "question": question["question"],
+                "score": question["score"],
+                "focus_area": question["focus_area"],
+                "difficulty": question["difficulty"],
+                "date": question["date"],
+            }
+        )
 
-    # Compute pairwise similarity → links
     links = []
-    n = len(questions)
-    for i in range(n):
-        for j in range(i + 1, n):
-            sim = float(_cosine_similarity(embeddings[i], embeddings[j].reshape(1, -1))[0])
-            if sim >= SIMILARITY_THRESHOLD:
-                links.append({
-                    "source": i,
-                    "target": j,
-                    "similarity": round(sim, 3),
-                })
+    question_count = len(questions)
+    for left in range(question_count):
+        for right in range(left + 1, question_count):
+            similarity = float(_cosine_similarity(embeddings[left], embeddings[right].reshape(1, -1))[0])
+            if similarity >= SIMILARITY_THRESHOLD:
+                links.append(
+                    {
+                        "source": left,
+                        "target": right,
+                        "similarity": round(similarity, 3),
+                    }
+                )
 
     return {"nodes": nodes, "links": links}
