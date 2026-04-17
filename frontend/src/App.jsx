@@ -15,6 +15,7 @@ import Profile from "./pages/Profile";
 import Review from "./pages/Review";
 import TopicDetail from "./pages/TopicDetail";
 import AdminContent from "./pages/admin/AdminContent";
+import AdminSettings from "./pages/admin/AdminSettings";
 import AdminUsers from "./pages/admin/AdminUsers";
 
 function ProtectedPage({ children }) {
@@ -42,6 +43,7 @@ function App() {
           <Route path="/graph" element={<ProtectedPage><Graph /></ProtectedPage>} />
           <Route path="/admin/users" element={<AdminPage><AdminUsers /></AdminPage>} />
           <Route path="/admin/content" element={<AdminPage><AdminContent /></AdminPage>} />
+          <Route path="/admin/settings" element={<AdminPage><AdminSettings /></AdminPage>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </ErrorBoundary>

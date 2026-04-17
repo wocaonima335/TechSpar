@@ -76,6 +76,16 @@ def list_users() -> list[AuthUser]:
     return [_to_auth_user(row) for row in rows]
 
 
+def get_first_admin_user() -> AuthUser | None:
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT * FROM users WHERE role = ? ORDER BY created_at ASC, username ASC LIMIT 1",
+        (UserRole.ADMIN.value,),
+    ).fetchone()
+    conn.close()
+    return _to_auth_user(row)
+
+
 def create_user(
     username: str,
     display_name: str,
@@ -104,12 +114,16 @@ def create_user(
 def update_user(
     user_id: str,
     *,
+    username: str | None = None,
     display_name: str | None = None,
     role: UserRole | None = None,
     status: UserStatus | None = None,
 ) -> AuthUser | None:
     updates = []
     params: list[str] = []
+    if username is not None:
+        updates.append("username = ?")
+        params.append(username)
     if display_name is not None:
         updates.append("display_name = ?")
         params.append(display_name)
@@ -124,11 +138,15 @@ def update_user(
         return _to_auth_user(row)
 
     conn = _get_conn()
-    conn.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params + [user_id])
-    conn.commit()
-    row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
-    conn.close()
-    return _to_auth_user(row)
+    try:
+        conn.execute(f"UPDATE users SET {', '.join(updates)} WHERE id = ?", params + [user_id])
+        conn.commit()
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        return _to_auth_user(row)
+    except sqlite3.IntegrityError as exc:
+        raise ValueError("Username already exists") from exc
+    finally:
+        conn.close()
 
 
 def reset_user_password(user_id: str, password_hash: str) -> bool:

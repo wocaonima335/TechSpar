@@ -7,6 +7,9 @@ _embedding_instance = None
 _llama_llm_instance = None
 
 
+EMBEDDING_SETTING_KEYS = {"embedding_api_base", "embedding_api_key", "embedding_model"}
+
+
 def get_langchain_llm():
     """LangChain ChatModel for LangGraph nodes (via OpenAI-compatible proxy)."""
     return ChatOpenAI(
@@ -29,6 +32,20 @@ def get_llama_llm():
             is_chat_model=True,
         )
     return _llama_llm_instance
+
+
+def reset_runtime_clients(changed_keys: set[str] | None = None):
+    global _embedding_instance, _llama_llm_instance
+    changed_keys = changed_keys or set()
+    _llama_llm_instance = None
+
+    from llama_index.core import Settings as LlamaSettings
+
+    if not changed_keys or changed_keys & EMBEDDING_SETTING_KEYS:
+        _embedding_instance = None
+        LlamaSettings.embed_model = None
+
+    LlamaSettings.llm = None
 
 
 def get_embedding():

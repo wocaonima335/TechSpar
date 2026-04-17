@@ -5,9 +5,10 @@ from __future__ import annotations
 import shutil
 import sqlite3
 from backend.config import settings
+from backend.runtime_settings import ensure_runtime_settings_table, load_runtime_settings_into_memory
 from backend.security import hash_password
 from backend.storage import sessions as session_storage
-from backend.storage.users import ensure_admin_user, ensure_users_table, get_user_by_username
+from backend.storage.users import ensure_admin_user, ensure_users_table, get_first_admin_user, get_user_by_username
 from backend.vector_memory import init_memory_table, rebuild_index_from_profile
 
 
@@ -20,6 +21,7 @@ def _connect() -> sqlite3.Connection:
 
 def _ensure_base_tables():
     ensure_users_table()
+    ensure_runtime_settings_table()
     conn = session_storage._get_conn()
     conn.close()
     init_memory_table()
@@ -29,6 +31,11 @@ def _ensure_admin():
     existing = get_user_by_username(settings.admin_username)
     if existing:
         return ensure_admin_user()
+
+    first_admin = get_first_admin_user()
+    if first_admin:
+        return first_admin
+
     if not settings.admin_password:
         raise RuntimeError("ADMIN_PASSWORD is required when bootstrapping the first admin user.")
     return ensure_admin_user(password_hash=hash_password(settings.admin_password))
@@ -97,6 +104,7 @@ def _cleanup_legacy_resume_cache():
 def run_bootstrap() -> dict:
     """Ensure auth tables exist and migrate legacy single-user data."""
     _ensure_base_tables()
+    load_runtime_settings_into_memory()
     admin_user = _ensure_admin()
     _migrate_files(admin_user.id)
     _backfill_user_ids(admin_user.id)

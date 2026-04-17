@@ -62,6 +62,10 @@ export function AuthProvider({ children }) {
     return response.user;
   };
 
+  const updateCurrentUser = (user) => {
+    setCurrentUser(user || null);
+  };
+
   const logout = () => {
     clearSession();
     setAuthLoading(false);
@@ -75,6 +79,7 @@ export function AuthProvider({ children }) {
     login,
     logout,
     restoreSession,
+    updateCurrentUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

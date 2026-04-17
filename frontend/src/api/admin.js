@@ -1,5 +1,33 @@
 import { apiJson } from "./client";
 
+export async function getAdminSettings() {
+  return apiJson("/admin/settings");
+}
+
+export async function updateAdminSettings(payload) {
+  return apiJson("/admin/settings", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAdminProfile(payload) {
+  return apiJson("/admin/me", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function changeAdminPassword(current_password, new_password) {
+  return apiJson("/admin/me/change-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ current_password, new_password }),
+  });
+}
+
 export async function listUsers() {
   return apiJson("/admin/users");
 }

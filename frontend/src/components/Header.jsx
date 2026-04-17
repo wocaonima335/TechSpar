@@ -14,6 +14,7 @@ const USER_NAV_ITEMS = [
 const ADMIN_NAV_ITEMS = [
   { path: "/admin/users", label: "用户管理" },
   { path: "/admin/content", label: "内容管理" },
+  { path: "/admin/settings", label: "系统设置" },
 ];
 
 export default function Header() {

@@ -97,6 +97,7 @@ class AdminUserCreateRequest(BaseModel):
 
 
 class AdminUserUpdateRequest(BaseModel):
+    username: str | None = Field(default=None, min_length=1, max_length=64)
     display_name: str | None = Field(default=None, min_length=1, max_length=64)
     role: UserRole | None = None
     status: UserStatus | None = None
@@ -104,3 +105,19 @@ class AdminUserUpdateRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     password: str = Field(min_length=6, max_length=256)
+
+
+class RuntimeSettingsUpdateRequest(BaseModel):
+    api_base: str | None = Field(default=None, max_length=512)
+    api_key: str | None = Field(default=None, max_length=512)
+    model: str | None = Field(default=None, max_length=256)
+
+
+class AdminSelfUpdateRequest(BaseModel):
+    username: str | None = Field(default=None, min_length=1, max_length=64)
+    display_name: str | None = Field(default=None, min_length=1, max_length=64)
+
+
+class AdminChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=6, max_length=256)

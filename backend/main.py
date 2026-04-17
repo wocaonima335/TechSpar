@@ -25,6 +25,8 @@ from backend.memory import (
     update_profile_after_interview,
 )
 from backend.models import (
+    AdminChangePasswordRequest,
+    AdminSelfUpdateRequest,
     AdminUserCreateRequest,
     AdminUserUpdateRequest,
     AuthUser,
@@ -34,7 +36,14 @@ from backend.models import (
     InterviewPhase,
     LoginRequest,
     ResetPasswordRequest,
+    RuntimeSettingsUpdateRequest,
     StartInterviewRequest,
+)
+from backend.runtime_settings import (
+    delete_runtime_settings,
+    get_persisted_runtime_settings,
+    get_runtime_settings_admin_view,
+    upsert_runtime_settings,
 )
 from backend.security import create_access_token, get_current_user, hash_password, require_admin, verify_password
 from backend.storage.sessions import (
@@ -78,6 +87,16 @@ def _serialize_user(user: AuthUser) -> dict:
 def _ensure_session_owner(owner_user_id: str, current_user: AuthUser):
     if owner_user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Session owner mismatch")
+
+
+def _refresh_runtime_clients(changed_keys: set[str]):
+    from backend.indexer import _init_llama_settings
+    from backend.llm_provider import get_embedding, reset_runtime_clients
+
+    reset_runtime_clients(changed_keys)
+    if not changed_keys or changed_keys & {"embedding_api_base", "embedding_api_key", "embedding_model"}:
+        get_embedding()
+    _init_llama_settings()
 
 
 @app.on_event("startup")
@@ -507,6 +526,13 @@ async def _update_drill_profile(user_id: str, topic: str, overall: dict, scores:
             pass
 
     mastery = overall.get("topic_mastery", {})
+    if isinstance(mastery, str):
+        mastery = {"notes": mastery}
+    elif not isinstance(mastery, dict):
+        mastery = {}
+    else:
+        mastery = dict(mastery)
+
     coverage = len(valid) / total_questions if total_questions else 0
     session_weight = coverage * 0.4
 
@@ -593,6 +619,74 @@ async def get_interview_topics(current_user: AuthUser = Depends(get_current_user
     return list_distinct_topics(current_user.id)
 
 
+@router.get("/admin/settings")
+def admin_get_settings(admin_user: AuthUser = Depends(require_admin)):
+    return get_runtime_settings_admin_view()
+
+
+@router.patch("/admin/settings")
+def admin_update_settings(body: RuntimeSettingsUpdateRequest, admin_user: AuthUser = Depends(require_admin)):
+    updates = body.model_dump(exclude_none=True)
+    if not updates:
+        return get_runtime_settings_admin_view()
+
+    previous = get_persisted_runtime_settings()
+    changed_keys = set(updates.keys())
+    previous_runtime_values = {key: getattr(settings, key) for key in changed_keys}
+    try:
+        upsert_runtime_settings(updates)
+        _refresh_runtime_clients(changed_keys)
+    except Exception as exc:
+        restore_values = {key: previous[key] for key in changed_keys if key in previous}
+        delete_keys = changed_keys - set(previous)
+        if delete_keys:
+            delete_runtime_settings(delete_keys)
+        if restore_values:
+            upsert_runtime_settings(restore_values)
+        for key, value in previous_runtime_values.items():
+            setattr(settings, key, value)
+        _refresh_runtime_clients(changed_keys)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to apply runtime settings: {exc}") from exc
+    return get_runtime_settings_admin_view()
+
+
+@router.patch("/admin/me")
+def admin_update_me(body: AdminSelfUpdateRequest, admin_user: AuthUser = Depends(require_admin)):
+    updates = body.model_dump(exclude_none=True)
+    if not updates:
+        return {"user": _serialize_user(admin_user), "reauth_required": False}
+
+    try:
+        user = update_user(
+            admin_user.id,
+            username=updates.get("username"),
+            display_name=updates.get("display_name"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    reauth_required = user.username != admin_user.username
+    return {
+        "user": _serialize_user(user),
+        "reauth_required": reauth_required,
+    }
+
+
+@router.post("/admin/me/change-password")
+def admin_change_my_password(body: AdminChangePasswordRequest, admin_user: AuthUser = Depends(require_admin)):
+    row = get_user_by_id(admin_user.id)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if not verify_password(body.current_password, row["password_hash"]):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+    if not reset_user_password(admin_user.id, hash_password(body.new_password)):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return {"ok": True, "reauth_required": True}
+
+
 @router.get("/admin/users")
 def admin_list_users(admin_user: AuthUser = Depends(require_admin)):
     return [_serialize_user(user) for user in list_users()]
@@ -619,12 +713,16 @@ def admin_update_user(
     body: AdminUserUpdateRequest,
     admin_user: AuthUser = Depends(require_admin),
 ):
-    user = update_user(
-        user_id,
-        display_name=body.display_name,
-        role=body.role,
-        status=body.status,
-    )
+    try:
+        user = update_user(
+            user_id,
+            username=body.username,
+            display_name=body.display_name,
+            role=body.role,
+            status=body.status,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return _serialize_user(user)
