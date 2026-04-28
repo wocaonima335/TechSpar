@@ -5,10 +5,10 @@ import { getTopics, getGraphData } from "../api/interview";
 const SIMILARITY_THRESHOLD = 0.65;
 
 function scoreToColor(score) {
-  if (score >= 8) return "#22C55E";
-  if (score >= 6) return "#FBBF24";
-  if (score >= 4) return "#FB923C";
-  return "#EF4444";
+  if (score >= 8) return "#10b981";
+  if (score >= 6) return "#60a5fa";
+  if (score >= 4) return "#f59e0b";
+  return "#ef4444";
 }
 
 export default function Graph() {
@@ -19,19 +19,18 @@ export default function Graph() {
   const [hoveredNode, setHoveredNode] = useState(null);
   const containerRef = useRef(null);
   const fgRef = useRef(null);
-  const [dimensions, setDimensions] = useState({ width: 800, height: 500 });
+  const [dimensions, setDimensions] = useState({ width: 800, height: 560 });
 
   useEffect(() => {
     getTopics().then(setTopics).catch(() => {});
   }, []);
 
-  // Resize observer for responsive canvas
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
       const { width } = entries[0].contentRect;
-      setDimensions({ width, height: Math.max(400, Math.min(width * 0.65, 600)) });
+      setDimensions({ width, height: Math.max(430, Math.min(width * 0.66, 680)) });
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -44,8 +43,7 @@ export default function Graph() {
     try {
       const data = await getGraphData(key);
       setGraphData(data);
-      // Zoom to fit after data loads
-      setTimeout(() => fgRef.current?.zoomToFit(400, 40), 300);
+      setTimeout(() => fgRef.current?.zoomToFit(450, 48), 300);
     } catch {
       setGraphData({ nodes: [], links: [] });
     } finally {
@@ -54,40 +52,31 @@ export default function Graph() {
   };
 
   const paintNode = useCallback((node, ctx) => {
-    const r = 5 + (node.difficulty || 3) * 1.2;
+    const r = 5 + (node.difficulty || 3) * 1.25;
     const color = scoreToColor(node.score);
-
-    // Glow for hovered node
-    if (hoveredNode === node) {
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 16;
-    }
-
+    ctx.shadowColor = color;
+    ctx.shadowBlur = hoveredNode === node ? 20 : 8;
     ctx.beginPath();
     ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
     ctx.fillStyle = color;
     ctx.fill();
-
     ctx.shadowBlur = 0;
-
-    // Label for hovered node
     if (hoveredNode === node) {
-      ctx.strokeStyle = "#FAFAF9";
+      ctx.strokeStyle = "#f8fafc";
       ctx.lineWidth = 1.5;
       ctx.stroke();
-
       const label = node.focus_area || node.question.slice(0, 20);
-      ctx.font = "11px DM Sans, sans-serif";
+      ctx.font = "12px DM Sans, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillStyle = "#FAFAF9";
-      ctx.fillText(label, node.x, node.y - r - 6);
+      ctx.fillStyle = "#f8fafc";
+      ctx.fillText(label, node.x, node.y - r - 8);
     }
   }, [hoveredNode]);
 
   const paintLink = useCallback((link, ctx) => {
     const alpha = Math.max(0.08, (link.similarity - SIMILARITY_THRESHOLD) * 3);
-    ctx.strokeStyle = `rgba(161, 161, 170, ${alpha})`;
-    ctx.lineWidth = 0.5 + link.similarity * 1.5;
+    ctx.strokeStyle = `rgba(148, 163, 184, ${alpha})`;
+    ctx.lineWidth = 0.5 + link.similarity * 1.45;
     ctx.beginPath();
     ctx.moveTo(link.source.x, link.source.y);
     ctx.lineTo(link.target.x, link.target.y);
@@ -95,52 +84,37 @@ export default function Graph() {
   }, []);
 
   const topicEntries = Object.entries(topics);
+  const nodeCount = graphData?.nodes?.length || 0;
+  const linkCount = graphData?.links?.length || 0;
 
   return (
-    <div className="flex-1 px-4 py-8 md:px-6 md:py-10 max-w-4xl mx-auto w-full">
-      <h1 className="text-2xl md:text-[28px] font-display font-bold mb-6">题目图谱</h1>
-
-      {/* Topic selector */}
-      <div className="flex flex-wrap gap-2 mb-6">
-        {topicEntries.map(([key, info]) => (
-          <button
-            key={key}
-            className={`px-4 py-2 rounded-lg text-sm transition-all border ${
-              selectedTopic === key
-                ? "bg-accent/15 border-accent text-accent-light"
-                : "bg-card border-border text-dim hover:text-text hover:border-accent/50"
-            }`}
-            onClick={() => handleSelectTopic(key)}
-          >
-            {info.icon} {info.name}
-          </button>
-        ))}
+    <div className="ts-page-wide">
+      <div className="ts-page-hero">
+        <div>
+          <div className="ts-kicker">Phase 2 · Knowledge graph</div>
+          <h1 className="ts-page-title">题目图谱</h1>
+          <p className="ts-page-subtitle">用节点、颜色和关联线快速定位薄弱知识点。桌面端支持拖拽、缩放和悬浮查看详情。</p>
+        </div>
+        <div className="ts-stat-grid min-w-[320px]">
+          <div className="ts-stat-card text-center"><div className="ts-stat-value">{nodeCount}</div><div className="ts-stat-label">nodes</div></div>
+          <div className="ts-stat-card text-center"><div className="ts-stat-value">{linkCount}</div><div className="ts-stat-label">links</div></div>
+          <div className="ts-stat-card text-center"><div className="ts-stat-value">{topicEntries.length}</div><div className="ts-stat-label">topics</div></div>
+        </div>
       </div>
 
-      {/* Graph area */}
-      <div
-        ref={containerRef}
-        className="bg-card border border-border rounded-box overflow-hidden relative"
-        style={{ minHeight: 400 }}
-      >
-        {!selectedTopic && (
-          <div className="flex items-center justify-center h-[400px] text-dim text-sm">
-            选择一个领域查看题目关联图谱
-          </div>
-        )}
+      <div className="ts-data-card mb-5 p-3">
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {topicEntries.map(([key, info]) => (
+            <button key={key} className={`ts-chip shrink-0 ${selectedTopic === key ? "ts-chip-active" : ""}`} onClick={() => handleSelectTopic(key)}>{info.icon} {info.name}</button>
+          ))}
+        </div>
+      </div>
 
-        {loading && (
-          <div className="flex items-center justify-center h-[400px] text-dim text-sm">
-            正在构建图谱...
-          </div>
-        )}
-
-        {selectedTopic && !loading && graphData && graphData.nodes.length === 0 && (
-          <div className="flex items-center justify-center h-[400px] text-dim text-sm">
-            该领域暂无已评分的训练记录
-          </div>
-        )}
-
+      <div ref={containerRef} className="ts-data-card relative overflow-hidden" style={{ minHeight: 430 }}>
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_35%_15%,rgba(59,130,246,0.16),transparent_36%),radial-gradient(circle_at_80%_80%,rgba(45,212,191,0.10),transparent_32%)]" />
+        {!selectedTopic && <div className="relative flex h-[430px] items-center justify-center text-sm text-dim">选择一个领域查看题目关联图谱</div>}
+        {loading && <div className="relative flex h-[430px] items-center justify-center text-sm text-dim">正在构建图谱...</div>}
+        {selectedTopic && !loading && graphData && graphData.nodes.length === 0 && <div className="relative flex h-[430px] items-center justify-center text-sm text-dim">该领域暂无已评分的训练记录</div>}
         {selectedTopic && !loading && graphData && graphData.nodes.length > 0 && (
           <ForceGraph2D
             ref={fgRef}
@@ -151,10 +125,7 @@ export default function Graph() {
             nodeCanvasObject={paintNode}
             nodePointerAreaPaint={(node, color, ctx) => {
               const r = 5 + (node.difficulty || 3) * 1.2;
-              ctx.beginPath();
-              ctx.arc(node.x, node.y, r + 4, 0, 2 * Math.PI);
-              ctx.fillStyle = color;
-              ctx.fill();
+              ctx.beginPath(); ctx.arc(node.x, node.y, r + 5, 0, 2 * Math.PI); ctx.fillStyle = color; ctx.fill();
             }}
             linkCanvasObject={paintLink}
             onNodeHover={setHoveredNode}
@@ -163,15 +134,11 @@ export default function Graph() {
             d3VelocityDecay={0.3}
           />
         )}
-
-        {/* Tooltip */}
         {hoveredNode && (
-          <div className="absolute top-3 right-3 bg-hover border border-border rounded-lg px-4 py-3 max-w-[280px] text-sm pointer-events-none animate-fade-in z-10">
-            <div className="font-medium text-text leading-snug mb-2">{hoveredNode.question}</div>
-            <div className="flex items-center gap-3 text-[13px] text-dim">
-              <span style={{ color: scoreToColor(hoveredNode.score) }}>
-                {hoveredNode.score}/10
-              </span>
+          <div className="absolute right-4 top-4 z-10 max-w-[320px] rounded-2xl border border-border bg-bg-surface/90 px-4 py-3 text-sm shadow-soft backdrop-blur-xl pointer-events-none animate-fade-in">
+            <div className="mb-2 font-semibold leading-snug text-text">{hoveredNode.question}</div>
+            <div className="flex flex-wrap items-center gap-3 text-[13px] text-dim">
+              <span style={{ color: scoreToColor(hoveredNode.score) }}>{hoveredNode.score}/10</span>
               {hoveredNode.focus_area && <span>{hoveredNode.focus_area}</span>}
               {hoveredNode.date && <span>{hoveredNode.date}</span>}
             </div>
@@ -179,25 +146,9 @@ export default function Graph() {
         )}
       </div>
 
-      {/* Legend */}
       {selectedTopic && graphData && graphData.nodes.length > 0 && (
-        <div className="flex items-center gap-5 mt-4 text-[13px] text-dim">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-green inline-block" />
-            <span>8+</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-accent-light inline-block" />
-            <span>6-8</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-orange inline-block" />
-            <span>4-6</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-red inline-block" />
-            <span>&lt;4</span>
-          </div>
+        <div className="mt-4 flex flex-wrap items-center gap-4 rounded-2xl border border-border bg-surface/60 px-4 py-3 text-[13px] text-dim">
+          {[['bg-green','8+'], ['bg-accent-light','6-8'], ['bg-orange','4-6'], ['bg-red','<4']].map(([cls, label]) => <div key={label} className="flex items-center gap-1.5"><span className={`inline-block h-2.5 w-2.5 rounded-full ${cls}`} /><span>{label}</span></div>)}
           <span className="ml-auto">共 {graphData.nodes.length} 题</span>
         </div>
       )}

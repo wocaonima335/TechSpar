@@ -22,13 +22,6 @@ function CollapsibleList({ items, limit, renderItem }) {
   );
 }
 
-function getScoreColor(score) {
-  if (score >= 8) return "var(--green)";
-  if (score >= 6) return "var(--accent-light)";
-  if (score >= 4) return "#e2b93b";
-  return "var(--red)";
-}
-
 function ScoreChart({ history }) {
   if (!history || history.length < 2) return null;
 
@@ -100,7 +93,7 @@ export default function Profile() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="text-center py-15 text-dim">加载中...</div>;
+  if (loading) return <div className="ts-page-narrow"><div className="ts-empty-state">正在加载个人画像...</div></div>;
 
   const hasData = profile && (
     profile.stats?.total_sessions > 0 ||
@@ -111,14 +104,18 @@ export default function Profile() {
 
   if (!hasData) {
     return (
-      <div className="flex-1 px-4 py-8 md:px-6 md:py-10 max-w-3xl mx-auto w-full">
-        <div className="text-2xl md:text-[28px] font-display font-bold mb-2">个人画像</div>
-        <div className="text-center py-15 text-dim">
-          <p>还没有面试数据</p>
-          <p className="mt-3 text-sm">开始面试后，系统会实时分析你的每个回答，自动构建你的能力画像</p>
-          <button className="mt-5 px-6 py-2.5 rounded-lg bg-accent text-white text-sm" onClick={() => navigate("/")}>
-            开始第一场面试
-          </button>
+      <div className="ts-page-narrow">
+        <div className="ts-page-hero">
+          <div>
+            <div className="ts-kicker">Phase 2 · Ability profile</div>
+            <h1 className="ts-page-title">个人画像</h1>
+            <p className="ts-page-subtitle">系统会从每一次回答里提取强项、短板和表达习惯，形成持续更新的能力地图。</p>
+          </div>
+        </div>
+        <div className="ts-empty-state">
+          <p className="text-lg font-bold text-text">还没有面试数据</p>
+          <p className="mt-3 text-sm">开始面试后，系统会实时分析你的每个回答，自动构建你的能力画像。</p>
+          <button className="ts-btn ts-btn-primary mt-6" onClick={() => navigate("/")}>开始第一场面试</button>
         </div>
       </div>
     );
@@ -129,29 +126,26 @@ export default function Profile() {
   const weakImproved = (profile.weak_points || []).filter((w) => w.improved);
 
   return (
-    <div className="flex-1 px-4 py-8 md:px-6 md:py-10 max-w-3xl mx-auto w-full">
-      <div className="text-2xl md:text-[28px] font-display font-bold mb-2">个人画像</div>
-      <div className="text-sm text-dim mb-8">
-        {stats.total_answers || 0} 次回答分析{stats.total_sessions ? ` | ${stats.total_sessions} 次完整面试` : ""} | 上次更新: {profile.updated_at?.slice(0, 16)}
+    <div className="ts-page-wide">
+      <div className="ts-page-hero">
+        <div>
+          <div className="ts-kicker">Phase 2 · Ability profile</div>
+          <h1 className="ts-page-title">个人画像</h1>
+          <p className="ts-page-subtitle">{stats.total_answers || 0} 次回答分析{stats.total_sessions ? ` · ${stats.total_sessions} 次完整面试` : ""} · 上次更新 {profile.updated_at?.slice(0, 16) || "--"}</p>
+        </div>
       </div>
 
       {/* Stats */}
       <div className="mb-7">
-        <div className="text-base font-semibold mb-3 flex items-center gap-2">练习统计</div>
-        {/* Overview row */}
-        <div className="flex gap-3 mb-3">
-          <div className="flex-1 bg-hover rounded-lg p-4 text-center">
-            <div className="text-[28px] font-bold text-accent-light">{stats.total_sessions}</div>
-            <div className="text-xs text-dim mt-1">总练习次数</div>
-          </div>
-          <div className="flex-1 bg-hover rounded-lg p-4 text-center">
-            <div className="text-[32px] font-bold text-green">{stats.avg_score || "-"}</div>
-            <div className="text-xs text-dim mt-1">综合平均分</div>
-          </div>
+        <div className="ts-section-title">练习统计</div>
+        <div className="ts-stat-grid mb-3">
+          <div className="ts-stat-card text-center"><div className="ts-stat-value text-accent-light">{stats.total_sessions || 0}</div><div className="ts-stat-label">总练习次数</div></div>
+          <div className="ts-stat-card text-center"><div className="ts-stat-value text-green">{stats.avg_score || "-"}</div><div className="ts-stat-label">综合平均分</div></div>
+          <div className="ts-stat-card text-center"><div className="ts-stat-value text-teal">{stats.total_answers || 0}</div><div className="ts-stat-label">回答分析</div></div>
         </div>
         {/* Two mode columns */}
         <div className="flex flex-col md:flex-row gap-3">
-          <div className="flex-1 bg-hover rounded-lg p-3.5 border-l-[3px] border-l-accent-light">
+          <div className="flex-1 ts-data-card p-4 border-l-[3px] border-l-accent-light">
             <div className="text-[13px] font-semibold text-accent-light mb-2.5">简历面试</div>
             <div className="flex gap-3">
               <div className="flex-1 text-center">
@@ -164,7 +158,7 @@ export default function Profile() {
               </div>
             </div>
           </div>
-          <div className="flex-1 bg-hover rounded-lg p-3.5 border-l-[3px] border-l-green">
+          <div className="flex-1 ts-data-card p-4 border-l-[3px] border-l-green">
             <div className="text-[13px] font-semibold text-green mb-2.5">专项训练</div>
             <div className="flex gap-3">
               <div className="flex-1 text-center">
@@ -183,8 +177,8 @@ export default function Profile() {
       {/* Score Trend */}
       {(stats.score_history || []).length >= 2 && (
         <div className="mb-7">
-          <div className="text-base font-semibold mb-3 flex items-center gap-2">成长趋势</div>
-          <div className="bg-card border border-border rounded-box px-4 py-5 md:px-6">
+          <div className="ts-section-title">成长趋势</div>
+          <div className="ts-data-card px-4 py-5 md:px-6">
             <ScoreChart history={stats.score_history} />
           </div>
         </div>
@@ -193,12 +187,12 @@ export default function Profile() {
       {/* Topic Mastery */}
       {Object.keys(profile.topic_mastery || {}).length > 0 && (
         <div className="mb-7">
-          <div className="text-base font-semibold mb-3 flex items-center gap-2">领域掌握度</div>
+          <div className="ts-section-title">领域掌握度</div>
           <div className="grid grid-cols-1 md:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2.5">
             {Object.entries(profile.topic_mastery).map(([topic, data]) => (
               <div
                 key={topic}
-                className="px-4 py-3 rounded-lg bg-hover border border-transparent cursor-pointer transition-all hover:border-accent"
+                className="ts-data-card ts-data-card-hover cursor-pointer px-4 py-3"
                 onClick={() => navigate(`/profile/topic/${topic}`)}
               >
                 <div className="flex justify-between items-center mb-1.5">
@@ -223,7 +217,7 @@ export default function Profile() {
         <div className="flex flex-col md:flex-row gap-3 mb-7">
           {weakActive.length > 0 && (
             <div className="flex-1 min-w-0">
-              <div className="text-base font-semibold mb-3 flex items-center gap-2">
+              <div className="ts-section-title">
                 待改进 <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-red/15 text-red">{weakActive.length}</span>
               </div>
               <CollapsibleList items={weakActive} limit={3} renderItem={(w, i) => (
@@ -239,7 +233,7 @@ export default function Profile() {
           )}
           {(profile.strong_points || []).length > 0 && (
             <div className="flex-1 min-w-0">
-              <div className="text-base font-semibold mb-3 flex items-center gap-2">强项</div>
+              <div className="ts-section-title">强项</div>
               <CollapsibleList items={profile.strong_points} limit={3} renderItem={(s, i) => (
                 <div key={i} className="flex justify-between items-center px-3.5 py-2.5 rounded-lg bg-hover text-sm border-l-[3px] border-l-green">
                   <span>{s.point}</span>
@@ -254,7 +248,7 @@ export default function Profile() {
       {/* Improved Points */}
       {weakImproved.length > 0 && (
         <div className="mb-7">
-          <div className="text-base font-semibold mb-3 flex items-center gap-2">
+          <div className="ts-section-title">
             已改善 <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-green/15 text-green">{weakImproved.length}</span>
           </div>
           <div className="flex flex-col gap-2">
@@ -272,7 +266,7 @@ export default function Profile() {
       {((profile.thinking_patterns?.strengths || []).length > 0 ||
         (profile.thinking_patterns?.gaps || []).length > 0) && (
         <div className="mb-7">
-          <div className="text-base font-semibold mb-3 flex items-center gap-2">思维模式</div>
+          <div className="ts-section-title">思维模式</div>
           <div className="flex flex-col md:flex-row gap-3">
             {(profile.thinking_patterns.strengths || []).length > 0 && (
               <div className="flex-1 min-w-0">
@@ -297,8 +291,8 @@ export default function Profile() {
       {/* Communication */}
       {profile.communication?.style && (
         <div className="mb-7">
-          <div className="text-base font-semibold mb-3 flex items-center gap-2">沟通风格分析</div>
-          <div className="p-4 bg-hover rounded-lg text-sm leading-[1.8]">
+          <div className="ts-section-title">沟通风格分析</div>
+          <div className="ts-data-card p-4 text-sm leading-[1.8]">
             <div>{profile.communication.style}</div>
             {(profile.communication.habits || []).length > 0 && (
               <div className="mt-3">

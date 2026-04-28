@@ -1,89 +1,109 @@
 @import "tailwindcss";
 
-/* ── Tailwind theme tokens mapped to CSS variables ── */
+/* TechSpar Phase 1 design system: modern, minimal, focused. */
 @theme {
   --color-bg: var(--bg);
+  --color-bg-soft: var(--bg-soft);
   --color-card: var(--bg-card);
+  --color-surface: var(--bg-surface);
   --color-hover: var(--bg-hover);
   --color-input: var(--bg-input);
   --color-border: var(--border);
   --color-text: var(--text);
   --color-dim: var(--text-dim);
+  --color-muted: var(--text-muted);
   --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
   --color-accent-light: var(--accent-light);
   --color-teal: var(--teal);
   --color-green: var(--green);
   --color-red: var(--red);
   --color-orange: var(--orange);
-  --radius-box: 12px;
 
-  --font-family-display: "Sora", sans-serif;
+  --radius-box: 14px;
+  --font-family-display: "Inter", "Sora", system-ui, sans-serif;
 
-  --animate-fade-in: fade-in 0.4s ease both;
-  --animate-slide-up: slide-up 0.5s ease both;
+  --animate-fade-in: fade-in 0.28s ease both;
+  --animate-slide-up: slide-up 0.34s ease both;
   --animate-pulse-dot: pulse-dot 1.4s infinite;
 }
 
 @keyframes fade-in {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes slide-up {
-  from { opacity: 0; transform: translateY(24px); }
+  from { opacity: 0; transform: translateY(18px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes pulse-dot {
-  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  0%, 80%, 100% { opacity: 0.35; transform: scale(0.82); }
   40% { opacity: 1; transform: scale(1); }
 }
 
-@keyframes glow {
-  0%, 100% { box-shadow: 0 0 16px rgba(245, 158, 11, 0.12); }
-  50% { box-shadow: 0 0 32px rgba(245, 158, 11, 0.25); }
-}
-
-/* ── CSS variable definitions (dark default) ── */
 :root {
-  --bg: #09090B;
-  --bg-card: #18181B;
-  --bg-hover: #27272A;
-  --bg-input: #1F1F23;
-  --border: #3F3F46;
-  --text: #FAFAF9;
-  --text-dim: #A1A1AA;
-  --accent: #F59E0B;
-  --accent-light: #FBBF24;
-  --teal: #14B8A6;
-  --green: #22C55E;
-  --red: #EF4444;
-  --orange: #FB923C;
+  color-scheme: dark;
+  --bg: #0f172a;
+  --bg-soft: #111827;
+  --bg-card: rgba(30, 41, 59, 0.72);
+  --bg-surface: rgba(15, 23, 42, 0.74);
+  --bg-hover: rgba(51, 65, 85, 0.72);
+  --bg-input: rgba(15, 23, 42, 0.82);
+  --border: rgba(148, 163, 184, 0.18);
+  --text: #f8fafc;
+  --text-dim: #a8b3c7;
+  --text-muted: #7c8aa1;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-light: #60a5fa;
+  --teal: #2dd4bf;
+  --green: #10b981;
+  --red: #ef4444;
+  --orange: #f59e0b;
+  --shadow-card: 0 24px 70px rgba(2, 8, 23, 0.32);
+  --shadow-soft: 0 14px 34px rgba(2, 8, 23, 0.22);
 }
 
 [data-theme="light"] {
-  --bg: #FAFAF9;
-  --bg-card: #FFFFFF;
-  --bg-hover: #F4F4F5;
-  --bg-input: #F4F4F5;
-  --border: #E4E4E7;
-  --text: #18181B;
-  --text-dim: #71717A;
-  --accent: #D97706;
-  --accent-light: #F59E0B;
-  --teal: #0D9488;
-  --green: #16A34A;
-  --red: #DC2626;
-  --orange: #EA580C;
+  color-scheme: light;
+  --bg: #f8fafc;
+  --bg-soft: #eef2f7;
+  --bg-card: rgba(255, 255, 255, 0.82);
+  --bg-surface: rgba(255, 255, 255, 0.72);
+  --bg-hover: rgba(241, 245, 249, 0.9);
+  --bg-input: rgba(255, 255, 255, 0.94);
+  --border: rgba(15, 23, 42, 0.10);
+  --text: #0f172a;
+  --text-dim: #64748b;
+  --text-muted: #94a3b8;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-light: #0284c7;
+  --teal: #0f766e;
+  --green: #059669;
+  --red: #dc2626;
+  --orange: #d97706;
+  --shadow-card: 0 24px 70px rgba(15, 23, 42, 0.10);
+  --shadow-soft: 0 12px 30px rgba(15, 23, 42, 0.08);
 }
 
-/* ── Base resets ── */
+html {
+  min-height: 100%;
+  background: var(--bg);
+}
+
 body {
-  font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Noto Sans SC", system-ui, sans-serif;
+  min-height: 100vh;
+  margin: 0;
   background: var(--bg);
   color: var(--text);
+  font-family: "Inter", "DM Sans", -apple-system, BlinkMacSystemFont, "Noto Sans SC", system-ui, sans-serif;
   line-height: 1.6;
-  min-height: 100vh;
+  letter-spacing: -0.01em;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 #root {
@@ -92,39 +112,168 @@ body {
   flex-direction: column;
 }
 
-button {
-  cursor: pointer;
-  border: none;
-  font-family: inherit;
-  font-size: inherit;
+* { box-sizing: border-box; }
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: var(--text);
 }
 
-input, textarea {
-  font-family: inherit;
-  font-size: inherit;
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: 0;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    color 180ms ease,
+    opacity 180ms ease;
+}
+
+button:disabled,
+input:disabled,
+textarea:disabled,
+select:disabled {
+  cursor: not-allowed;
+}
+
+input:focus,
+textarea:focus,
+select:focus,
+button:focus-visible,
+a:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 66%, white 8%);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
 }
 
 a {
-  color: var(--teal);
+  color: var(--accent-light);
   text-decoration: none;
 }
 
-/* ── Markdown in chat bubbles ── */
+.glass-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(22px);
+}
+
+.soft-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(16px);
+}
+
+.ts-container {
+  width: min(100% - 2rem, 1180px);
+  margin-inline: auto;
+}
+
+.ts-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  padding: 0.35rem 0.7rem;
+  color: var(--accent-light);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.ts-btn {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  padding: 0.72rem 1.15rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.ts-btn-primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-light));
+  color: #f8fafc;
+  box-shadow: 0 16px 34px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.ts-btn-primary:hover { transform: translateY(-1px); }
+
+.ts-btn-secondary {
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text);
+}
+
+.ts-btn-secondary:hover {
+  background: var(--bg-hover);
+  transform: translateY(-1px);
+}
+
+.ts-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--bg-input);
+  color: var(--text);
+  padding: 0.85rem 1rem;
+}
+
+.ts-page {
+  flex: 1;
+  padding: 2rem 1rem 3.5rem;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 42%, transparent);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+
+/* Markdown in chat bubbles */
 .md-content p { margin: 0 0 8px; }
 .md-content p:last-child { margin-bottom: 0; }
-.md-content strong { color: var(--text); font-weight: 600; }
+.md-content strong { color: var(--text); font-weight: 650; }
 .md-content em { color: var(--teal); }
 .md-content code {
   background: var(--bg-hover);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 13px;
   font-family: "JetBrains Mono", "Fira Code", monospace;
 }
 .md-content pre {
   background: var(--bg-hover);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 12px 16px;
   margin: 8px 0;
   overflow-x: auto;
@@ -132,20 +281,12 @@ a {
 @media (max-width: 768px) {
   .md-content pre { padding: 8px 12px; }
   .md-content code { font-size: 12px; }
+  .ts-page { padding-top: 1.25rem; }
 }
-.md-content pre code {
-  background: none;
-  padding: 0;
-}
-.md-content ul, .md-content ol {
-  margin: 6px 0;
-  padding-left: 20px;
-}
+.md-content pre code { background: none; padding: 0; }
+.md-content ul, .md-content ol { margin: 6px 0; padding-left: 20px; }
 .md-content li { margin: 2px 0; }
-.md-content h1, .md-content h2, .md-content h3 {
-  margin: 12px 0 6px;
-  font-weight: 600;
-}
+.md-content h1, .md-content h2, .md-content h3 { margin: 12px 0 6px; font-weight: 650; }
 .md-content h1 { font-size: 18px; }
 .md-content h2 { font-size: 16px; }
 .md-content h3 { font-size: 15px; }
@@ -159,4 +300,228 @@ a {
   border: none;
   border-top: 1px solid var(--border);
   margin: 12px 0;
+}
+
+
+/* TechSpar Phase 2: focused training workspace and data surfaces. */
+.ts-page-wide {
+  flex: 1;
+  width: min(100% - 2rem, 1240px);
+  margin-inline: auto;
+  padding: 2rem 0 3.5rem;
+}
+
+.ts-page-narrow {
+  flex: 1;
+  width: min(100% - 2rem, 860px);
+  margin-inline: auto;
+  padding: 2rem 0 3.5rem;
+}
+
+.ts-page-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.ts-page-title {
+  margin-top: 0.7rem;
+  color: var(--text);
+  font-family: var(--font-family-display);
+  font-size: clamp(1.75rem, 3vw, 2.7rem);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1.04;
+}
+
+.ts-page-subtitle {
+  margin-top: 0.75rem;
+  max-width: 46rem;
+  color: var(--text-dim);
+  font-size: 0.95rem;
+  line-height: 1.8;
+}
+
+.ts-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.ts-stat-card {
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 88%, transparent), color-mix(in srgb, var(--bg-surface) 92%, transparent));
+  padding: 1rem;
+  box-shadow: var(--shadow-soft);
+}
+
+.ts-stat-value {
+  color: var(--text);
+  font-family: var(--font-family-display);
+  font-size: 1.85rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.ts-stat-label {
+  margin-top: 0.45rem;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
+.ts-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text-dim);
+  padding: 0.45rem 0.8rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.ts-chip-active {
+  border-color: color-mix(in srgb, var(--accent) 54%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent-light);
+}
+
+.ts-data-card {
+  border: 1px solid var(--border);
+  border-radius: 1.35rem;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(18px);
+}
+
+.ts-data-card-hover:hover {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+  transform: translateY(-1px);
+}
+
+.ts-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.8rem;
+  color: var(--text);
+  font-size: 0.98rem;
+  font-weight: 760;
+}
+
+.ts-empty-state {
+  border: 1px dashed color-mix(in srgb, var(--border) 78%, var(--accent) 18%);
+  border-radius: 1.35rem;
+  background: color-mix(in srgb, var(--bg-surface) 76%, transparent);
+  padding: 3rem 1.25rem;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.ts-progress-track {
+  height: 0.45rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.ts-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--teal));
+}
+
+@media (max-width: 768px) {
+  .ts-page-wide, .ts-page-narrow { width: min(100% - 1rem, 100%); padding-top: 1.25rem; }
+  .ts-page-hero { align-items: flex-start; flex-direction: column; }
+  .ts-stat-grid { grid-template-columns: 1fr; }
+}
+
+
+/* TechSpar Phase 3: admin console, accessibility and low-risk polish. */
+.ts-admin-shell {
+  flex: 1;
+  width: min(100% - 2rem, 1180px);
+  margin-inline: auto;
+  padding: 2rem 0 3.5rem;
+}
+
+.ts-admin-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.ts-admin-card {
+  border: 1px solid var(--border);
+  border-radius: 1.35rem;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 90%, transparent), color-mix(in srgb, var(--bg-surface) 90%, transparent));
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(18px);
+}
+
+.ts-admin-field {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 0.95rem;
+  background: var(--bg-input);
+  color: var(--text);
+  padding: 0.82rem 0.95rem;
+  font-size: 0.9rem;
+}
+
+.ts-admin-label {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: var(--text-dim);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.ts-admin-action {
+  display: inline-flex;
+  min-height: 2.4rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text);
+  padding: 0.55rem 0.95rem;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.ts-admin-action:hover { background: var(--bg-hover); transform: translateY(-1px); }
+.ts-admin-action-primary { border-color: color-mix(in srgb, var(--accent) 42%, transparent); background: linear-gradient(135deg, var(--accent), var(--accent-light)); color: #f8fafc; }
+.ts-admin-action-danger { border-color: color-mix(in srgb, var(--red) 30%, transparent); background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--red); }
+.ts-admin-action:disabled { opacity: 0.45; transform: none; }
+
+.ts-admin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  padding: 0.3rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.ts-admin-status-dot { width: 0.48rem; height: 0.48rem; border-radius: 999px; }
+
+@media (max-width: 768px) {
+  .ts-admin-shell { width: min(100% - 1rem, 100%); padding-top: 1.25rem; }
+  .ts-admin-hero { align-items: flex-start; flex-direction: column; }
 }

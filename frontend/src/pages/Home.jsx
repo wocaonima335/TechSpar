@@ -3,6 +3,12 @@ import { useNavigate } from "react-router-dom";
 import TopicCard from "../components/TopicCard";
 import { getProfile, getResumeStatus, getTopics, startInterview, uploadResume } from "../api/interview";
 
+const CAPABILITIES = [
+  { title: "真实追问", desc: "围绕简历和专项主题持续追问，逼近真实面试压力。" },
+  { title: "结构复盘", desc: "每轮训练沉淀评分、亮点、风险点和下一步建议。" },
+  { title: "成长画像", desc: "长期追踪领域掌握度，让训练从感觉变成数据。" },
+];
+
 export default function Home() {
   const navigate = useNavigate();
   const [mode, setMode] = useState(null);
@@ -28,6 +34,7 @@ export default function Home() {
     try {
       const data = await uploadResume(file);
       setResumeFile({ filename: data.filename, size: data.size });
+      setMode("resume");
     } catch (err) {
       alert("上传失败: " + err.message);
     } finally {
@@ -51,164 +58,176 @@ export default function Home() {
   };
 
   const canStart = (mode === "resume" && resumeFile) || (mode === "topic_drill" && selectedTopic);
+  const stats = profile?.stats;
+  const lastEntry = (stats?.score_history || []).slice(-1)[0];
 
   return (
-    <div className="flex-1 flex flex-col items-center px-4 pt-8 pb-10 md:px-6 md:pt-15">
-      {/* Hero */}
-      <div className="text-center mb-10 md:mb-12 relative">
-        <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-[500px] h-[250px] bg-gradient-to-b from-accent/10 via-accent/5 to-transparent rounded-full blur-3xl pointer-events-none" />
-        <h1 className="text-3xl md:text-[44px] font-display font-bold mb-3 bg-gradient-to-r from-accent-light via-accent to-orange bg-clip-text text-transparent relative">
-          TechSpar
-        </h1>
-        <p className="text-base text-dim max-w-[500px] relative">
-          越练越懂你的 AI 面试教练——追踪你的成长轨迹，精准命中薄弱点
-        </p>
-      </div>
-
-      {/* Mode cards */}
-      <div className="flex flex-col md:flex-row gap-4 md:gap-6 mb-10 md:mb-12 w-full md:w-auto md:justify-center">
-        <div
-          className={`w-full md:w-80 px-6 py-7 rounded-2xl cursor-pointer transition-all text-left border-2 animate-fade-in
-            ${mode === "resume" ? "border-accent bg-hover shadow-[0_0_24px_rgba(245,158,11,0.1)]" : "border-border bg-card hover:border-accent/50 hover:shadow-[0_0_20px_rgba(245,158,11,0.08)]"}`}
-          onClick={() => { setMode("resume"); setSelectedTopic(null); }}
-        >
-          <div className="inline-block px-2.5 py-1 rounded-md text-xs font-medium mb-3 bg-accent/15 text-accent-light">
-            全流程模拟
-          </div>
-          <div className="text-xl font-semibold mb-2">简历模拟面试</div>
-          <div className="text-sm text-dim leading-relaxed">
-            AI 读取你的简历，模拟真实面试官。从自我介绍到项目深挖，完整走一遍面试流程。
-          </div>
-        </div>
-
-        <div
-          className={`w-full md:w-80 px-6 py-7 rounded-2xl cursor-pointer transition-all text-left border-2 animate-fade-in [animation-delay:0.1s]
-            ${mode === "topic_drill" ? "border-green bg-hover shadow-[0_0_24px_rgba(34,197,94,0.1)]" : "border-border bg-card hover:border-green/50 hover:shadow-[0_0_20px_rgba(34,197,94,0.08)]"}`}
-          onClick={() => setMode("topic_drill")}
-        >
-          <div className="inline-block px-2.5 py-1 rounded-md text-xs font-medium mb-3 bg-green/15 text-green">
-            针对强化
-          </div>
-          <div className="text-xl font-semibold mb-2">专项强化训练</div>
-          <div className="text-sm text-dim leading-relaxed">
-            选一个领域集中刷题，AI 根据你的回答动态调整难度，精准定位薄弱点。
-          </div>
-        </div>
-      </div>
-
-      {/* Quick stats */}
-      {profile?.stats?.total_sessions > 0 && !mode && (() => {
-        const s = profile.stats;
-        const lastEntry = (s.score_history || []).slice(-1)[0];
-        const mastery = profile.topic_mastery || {};
-        const topTopics = Object.entries(mastery)
-          .sort((a, b) => (b[1].score || 0) - (a[1].score || 0))
-          .slice(0, 3);
-        return (
-          <div className="w-full max-w-[700px] mb-10 bg-card border border-border rounded-xl px-5 py-5 md:px-6">
-            <div className="flex justify-between items-center mb-3.5">
-              <span className="text-[15px] font-semibold">训练概览</span>
-              <span
-                className="text-[13px] text-accent-light cursor-pointer"
-                onClick={() => navigate("/profile")}
-              >
-                查看画像 &rsaquo;
-              </span>
+    <div className="ts-page">
+      <div className="ts-container flex flex-col gap-7 md:gap-8">
+        <section className="glass-card relative overflow-hidden rounded-[2rem] px-5 py-7 md:px-9 md:py-10 lg:px-12 lg:py-12">
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(59,130,246,0.12),transparent_42%),radial-gradient(circle_at_84%_12%,rgba(45,212,191,0.12),transparent_30%)]" />
+          <div className="relative grid gap-9 lg:grid-cols-[1.18fr_0.82fr] lg:items-center">
+            <div>
+              <div className="ts-kicker">Phase 1 · Minimal workspace</div>
+              <h1 className="mt-5 max-w-3xl text-4xl font-bold tracking-[-0.04em] text-text md:text-6xl md:leading-[1.02]">
+                AI 模拟面试，
+                <span className="block bg-gradient-to-r from-accent-light via-teal to-text bg-clip-text text-transparent">越练越强。</span>
+              </h1>
+              <p className="mt-5 max-w-2xl text-base leading-8 text-dim md:text-lg">
+                TechSpar 把简历模拟、专项强化、知识沉淀和成长画像收束到一个安静的训练工作台。界面少一点噪音，复盘多一点确定性。
+              </p>
+              <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+                <button className="ts-btn ts-btn-primary" onClick={() => setMode("resume")} type="button">
+                  开始简历模拟
+                  <span aria-hidden="true">→</span>
+                </button>
+                <button className="ts-btn ts-btn-secondary" onClick={() => setMode("topic_drill")} type="button">
+                  选择专项训练
+                </button>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-4 md:gap-6">
-              <div className="text-center min-w-[60px]">
-                <div className="text-2xl font-bold text-accent-light">{s.total_sessions}</div>
-                <div className="text-[11px] text-dim mt-0.5">总练习</div>
-              </div>
-              <div className="text-center min-w-[60px]">
-                <div className="text-2xl font-bold text-green">{s.avg_score || "-"}</div>
-                <div className="text-[11px] text-dim mt-0.5">综合平均</div>
-              </div>
-              {topTopics.length > 0 && (
-                <div className="flex-1 min-w-[120px]">
-                  <div className="text-[11px] text-dim mb-1.5">领域掌握</div>
-                  {topTopics.map(([t, d]) => (
-                    <div key={t} className="flex items-center gap-2 mb-1">
-                      <span className="text-xs w-[70px] text-text">{t}</span>
-                      <div className="flex-1 h-1 rounded-sm bg-border overflow-hidden">
-                        <div className="h-full rounded-sm bg-accent-light" style={{ width: `${d.score || 0}%` }} />
-                      </div>
-                      <span className="text-[11px] text-dim w-7">{d.score || 0}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {lastEntry && (
-                <div className="text-center min-w-[80px]">
-                  <div className={`text-2xl font-bold ${lastEntry.avg_score >= 6 ? "text-green" : "text-orange"}`}>
-                    {lastEntry.avg_score}
+
+            <div className="grid gap-3">
+              <div className="soft-panel rounded-[1.5rem] p-5">
+                <div className="text-xs font-bold uppercase tracking-[0.18em] text-muted">Training snapshot</div>
+                <div className="mt-4 grid grid-cols-3 gap-3 text-center">
+                  <div className="rounded-2xl bg-hover/60 px-3 py-4">
+                    <div className="text-2xl font-bold text-accent-light">{stats?.total_sessions || 0}</div>
+                    <div className="mt-1 text-xs text-muted">总练习</div>
                   </div>
-                  <div className="text-[11px] text-dim mt-0.5">上次得分</div>
+                  <div className="rounded-2xl bg-hover/60 px-3 py-4">
+                    <div className="text-2xl font-bold text-green">{stats?.avg_score || "-"}</div>
+                    <div className="mt-1 text-xs text-muted">平均分</div>
+                  </div>
+                  <div className="rounded-2xl bg-hover/60 px-3 py-4">
+                    <div className="text-2xl font-bold text-orange">{lastEntry?.avg_score || "-"}</div>
+                    <div className="mt-1 text-xs text-muted">最近</div>
+                  </div>
                 </div>
-              )}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+                {CAPABILITIES.map((item) => (
+                  <div key={item.title} className="soft-panel rounded-[1.25rem] p-4">
+                    <div className="text-sm font-semibold text-text">{item.title}</div>
+                    <div className="mt-1 text-xs leading-6 text-dim">{item.desc}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-        );
-      })()}
+        </section>
 
-      {/* Resume upload */}
-      {mode === "resume" && (
-        <div className="w-full max-w-[700px] mb-8">
-          {resumeFile ? (
-            <div className="flex items-center justify-between px-4 py-4 md:px-5 bg-card border border-border rounded-xl">
-              <div className="flex items-center gap-2.5 text-sm text-text">
-                <span>📄</span>
-                <span className="font-medium">{resumeFile.filename}</span>
-                <span className="text-xs text-dim">
-                  ({(resumeFile.size / 1024).toFixed(0)} KB)
-                </span>
+        <section className="grid gap-4 lg:grid-cols-2">
+          <button
+            className={`group glass-card rounded-[1.75rem] p-6 text-left ${
+              mode === "resume" ? "ring-2 ring-accent/55" : "hover:-translate-y-1"
+            }`}
+            onClick={() => { setMode("resume"); setSelectedTopic(null); }}
+            type="button"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="ts-kicker">Resume interview</div>
+                <div className="mt-5 text-2xl font-bold tracking-tight text-text">简历模拟面试</div>
+                <div className="mt-3 max-w-xl text-sm leading-7 text-dim">
+                  上传 PDF 简历后，AI 按真实面试路径推进：自我介绍、项目深挖、技术追问和综合复盘。
+                </div>
               </div>
-              <label className={`px-4 py-2 rounded-lg bg-accent/12 text-accent-light text-[13px] font-medium cursor-pointer transition-opacity ${uploading ? "opacity-40" : ""}`}>
-                {uploading ? "上传中..." : "重新上传"}
+              <span className="rounded-full border border-border bg-surface px-3 py-2 text-sm text-dim group-hover:translate-x-1">→</span>
+            </div>
+          </button>
+
+          <button
+            className={`group glass-card rounded-[1.75rem] p-6 text-left ${
+              mode === "topic_drill" ? "ring-2 ring-green/55" : "hover:-translate-y-1"
+            }`}
+            onClick={() => setMode("topic_drill")}
+            type="button"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="ts-kicker border-green/25 bg-green/10 text-green">Focused drill</div>
+                <div className="mt-5 text-2xl font-bold tracking-tight text-text">专项强化训练</div>
+                <div className="mt-3 max-w-xl text-sm leading-7 text-dim">
+                  围绕单个主题集中练习，适合考前冲刺、短板修复和高频面试题快速迭代。
+                </div>
+              </div>
+              <span className="rounded-full border border-border bg-surface px-3 py-2 text-sm text-dim group-hover:translate-x-1">→</span>
+            </div>
+          </button>
+        </section>
+
+        {mode === "resume" && (
+          <section className="glass-card rounded-[1.75rem] p-5 md:p-6">
+            <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-[0.18em] text-muted">Step 01</div>
+                <div className="mt-1 text-xl font-bold text-text">准备你的简历</div>
+              </div>
+              <div className="text-sm text-dim">仅支持 PDF，建议上传最新版本。</div>
+            </div>
+            {resumeFile ? (
+              <div className="flex flex-col gap-4 rounded-3xl border border-border bg-surface p-4 md:flex-row md:items-center md:justify-between">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-accent/12 text-xl">📄</span>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-text">{resumeFile.filename}</div>
+                    <div className="text-xs text-muted">{(resumeFile.size / 1024).toFixed(0)} KB · 已就绪</div>
+                  </div>
+                </div>
+                <label className={`ts-btn ts-btn-secondary min-h-10 cursor-pointer px-4 py-2 text-sm ${uploading ? "opacity-40" : ""}`}>
+                  {uploading ? "上传中..." : "重新上传"}
+                  <input type="file" accept=".pdf" className="hidden" onChange={handleUpload} disabled={uploading} />
+                </label>
+              </div>
+            ) : (
+              <label className={`flex cursor-pointer flex-col items-center gap-3 rounded-3xl border border-dashed border-border bg-surface px-5 py-10 text-center hover:border-accent/50 ${uploading ? "opacity-50" : ""}`}>
+                <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-hover text-2xl">📄</span>
+                <span className="text-base font-semibold text-text">{uploading ? "正在上传..." : "点击上传简历 PDF"}</span>
+                <span className="max-w-md text-sm leading-7 text-dim">上传后即可开始完整模拟，系统会根据项目经历和技能栈进行追问。</span>
                 <input type="file" accept=".pdf" className="hidden" onChange={handleUpload} disabled={uploading} />
               </label>
+            )}
+          </section>
+        )}
+
+        {mode === "topic_drill" && (
+          <section className="glass-card rounded-[1.75rem] p-5 md:p-6">
+            <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-[0.18em] text-muted">Step 01</div>
+                <div className="mt-1 text-xl font-bold text-text">选择训练领域</div>
+              </div>
+              <div className="text-sm text-dim">选择一个主题，开始更聚焦的专项问答。</div>
             </div>
-          ) : (
-            <label className={`flex flex-col items-center gap-2 px-5 py-7 bg-card border-2 border-dashed border-border rounded-xl cursor-pointer transition-colors text-sm text-dim hover:border-accent/50 ${uploading ? "opacity-50" : ""}`}>
-              <span className="text-[28px]">📄</span>
-              <span>{uploading ? "正在上传..." : "点击上传简历（PDF）"}</span>
-              <input type="file" accept=".pdf" className="hidden" onChange={handleUpload} disabled={uploading} />
-            </label>
-          )}
-        </div>
-      )}
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {Object.entries(topics).map(([key, info]) => (
+                <TopicCard
+                  key={key}
+                  topicKey={key}
+                  name={info.name || key}
+                  icon={info.icon}
+                  selected={selectedTopic === key}
+                  onClick={() => setSelectedTopic(key)}
+                />
+              ))}
+            </div>
+          </section>
+        )}
 
-      {/* Topic selection */}
-      {mode === "topic_drill" && (
-        <div className="w-full max-w-[700px]">
-          <div className="text-lg font-semibold mb-4 text-left">选择训练领域</div>
-          <div className="grid grid-cols-1 md:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3 mb-8">
-            {Object.entries(topics).map(([key, info]) => (
-              <TopicCard
-                key={key}
-                topicKey={key}
-                name={info.name || key}
-                icon={info.icon}
-                selected={selectedTopic === key}
-                onClick={() => setSelectedTopic(key)}
-              />
-            ))}
+        {mode && (
+          <div className="sticky bottom-4 z-20 mx-auto w-full max-w-3xl">
+            <button
+              className={`ts-btn ts-btn-primary w-full rounded-2xl py-4 text-base ${!canStart || loading ? "cursor-not-allowed opacity-45" : ""}`}
+              disabled={!canStart || loading}
+              onClick={handleStart}
+              type="button"
+            >
+              {loading ? "正在初始化面试..." : "开始面试"}
+            </button>
           </div>
-        </div>
-      )}
-
-      {/* Start button */}
-      {mode && (
-        <div className="w-full max-w-[700px]">
-          <button
-            className={`w-full py-3.5 rounded-box bg-gradient-to-r from-accent to-orange text-white text-base font-semibold transition-all ${!canStart || loading ? "opacity-40 cursor-not-allowed" : "hover:shadow-[0_0_24px_rgba(245,158,11,0.2)]"}`}
-            disabled={!canStart || loading}
-            onClick={handleStart}
-          >
-            {loading ? "正在初始化面试..." : "开始面试"}
-          </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

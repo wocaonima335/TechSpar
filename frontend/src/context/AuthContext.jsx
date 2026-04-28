@@ -1,9 +1,8 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { getMe, login as loginRequest } from "../api/auth";
 import { ACCESS_TOKEN_KEY, getStoredToken, setStoredToken } from "../api/client";
-
-const AuthContext = createContext(null);
+import { AuthContext } from "./authContextValue";
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => getStoredToken());
@@ -18,13 +17,13 @@ export function AuthProvider({ children }) {
     }
   }, [token]);
 
-  const clearSession = () => {
+  const clearSession = useCallback(() => {
     setToken("");
     setCurrentUser(null);
     setStoredToken("");
-  };
+  }, []);
 
-  const restoreSession = async () => {
+  const restoreSession = useCallback(async () => {
     const stored = getStoredToken();
     if (!stored) {
       clearSession();
@@ -42,17 +41,17 @@ export function AuthProvider({ children }) {
     } finally {
       setAuthLoading(false);
     }
-  };
+  }, [clearSession]);
 
   useEffect(() => {
     restoreSession();
-  }, []);
+  }, [restoreSession]);
 
   useEffect(() => {
     const handleLogout = () => clearSession();
     window.addEventListener("auth:logout", handleLogout);
     return () => window.removeEventListener("auth:logout", handleLogout);
-  }, []);
+  }, [clearSession]);
 
   const login = async (username, password) => {
     const response = await loginRequest(username, password);
@@ -83,12 +82,4 @@ export function AuthProvider({ children }) {
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-export function useAuth() {
-  const value = useContext(AuthContext);
-  if (!value) {
-    throw new Error("useAuth must be used within AuthProvider");
-  }
-  return value;
 }

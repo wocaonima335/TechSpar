@@ -4,6 +4,14 @@ export async function getAdminSettings() {
   return apiJson("/admin/settings");
 }
 
+export async function testAdminSettings(payload) {
+  return apiJson("/admin/settings/test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function updateAdminSettings(payload) {
   return apiJson("/admin/settings", {
     method: "PATCH",

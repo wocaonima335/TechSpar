@@ -14,5 +14,6 @@
   "cpp": { "name": "C++ 核心", "icon": "⚙️", "dir": "13_CPP核心" },
   "stl": { "name": "STL 与容器", "icon": "📦", "dir": "14_STL与容器" },
   "ffmpeg": { "name": "ffmpeg 开发", "icon": "🎬", "dir": "15_ffmpeg开发" },
-  "network": { "name": "计算机网络", "icon": "🌐", "dir": "16_计算机网络" }
+  "network": { "name": "计算机网络", "icon": "🌐", "dir": "16_计算机网络" },
+  "qt": { "name": "Qt 开发", "icon": "🧩", "dir": "17_Qt开发" }
 }

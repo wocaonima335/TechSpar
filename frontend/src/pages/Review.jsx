@@ -23,7 +23,7 @@ function DimensionScores({ dimensionScores, avgScore }) {
   if (!entries.length) return null;
 
   return (
-    <div className="bg-card border border-border rounded-2xl px-5 py-6 md:px-7 mb-6">
+    <div className="ts-data-card px-5 py-6 md:px-7 mb-6">
       <div className="text-lg font-semibold mb-4">
         维度评分
         {avgScore != null && (
@@ -58,7 +58,7 @@ function DrillReview({ scores, overall, questions, answers }) {
   return (
     <>
       {/* Overall summary */}
-      <div className="bg-card border border-border rounded-2xl px-5 py-6 md:px-8 md:py-7 mb-6">
+      <div className="ts-data-card px-5 py-6 md:px-8 md:py-7 mb-6">
         <div className="text-lg font-semibold mb-3">整体评价</div>
         <div>
           <span className="inline-block text-[32px] font-bold mr-2" style={{ color: typeof avgScore === "number" ? getScoreColor(avgScore).color : "var(--text)" }}>
@@ -118,7 +118,7 @@ function DrillReview({ scores, overall, questions, answers }) {
 
         if (isSkipped) {
           return (
-            <div key={q.id} className="bg-card border border-border rounded-xl px-4 py-3 md:px-6 mb-4 opacity-50 flex items-center justify-between animate-fade-in">
+            <div key={q.id} className="ts-data-card px-4 py-3 md:px-6 mb-4 opacity-60 flex items-center justify-between animate-fade-in">
               <div className="flex items-center gap-2">
                 <span className="text-[13px] font-semibold text-accent-light bg-accent/12 px-2.5 py-0.5 rounded-md">Q{q.id}</span>
                 <span className="text-sm text-dim">{q.question.slice(0, 50)}{q.question.length > 50 ? "..." : ""}</span>
@@ -129,7 +129,7 @@ function DrillReview({ scores, overall, questions, answers }) {
         }
 
         return (
-          <div key={q.id} className="bg-card border border-border rounded-xl px-4 py-5 md:px-6 mb-4 animate-fade-in">
+          <div key={q.id} className="ts-data-card px-4 py-5 md:px-6 mb-4 animate-fade-in">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <span className="text-[13px] font-semibold text-accent-light bg-accent/12 px-2.5 py-0.5 rounded-md">Q{q.id}</span>
@@ -192,7 +192,8 @@ export default function Review() {
   const [loading, setLoading] = useState(!review && !scores);
 
   useEffect(() => {
-    if (!review && !scores) {
+    if (review || scores) return;
+    const timer = window.setTimeout(() => {
       setLoading(true);
       getReview(sessionId)
         .then((data) => {
@@ -217,20 +218,24 @@ export default function Review() {
         })
         .catch((err) => setReview("加载失败: " + err.message))
         .finally(() => setLoading(false));
-    }
-  }, [sessionId]);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [sessionId, review, scores]);
 
   if (loading) {
-    return <div className="text-center py-15 text-dim">加载复盘报告中...</div>;
+    return <div className="ts-page-narrow"><div className="ts-empty-state">加载复盘报告中...</div></div>;
   }
 
   const showDrill = isDrill || (mode === "topic_drill" && (scores || questions.length > 0));
 
   return (
-    <div className="flex-1 px-4 py-8 md:px-6 md:py-10 max-w-3xl mx-auto w-full">
-      <div className="mb-8">
-        <div className="text-2xl md:text-[28px] font-display font-bold mb-2">{showDrill ? "训练复盘" : "面试复盘"}</div>
-        <div className="text-sm text-dim">Session: {sessionId}</div>
+    <div className="ts-page-narrow">
+      <div className="ts-page-hero">
+        <div>
+          <div className="ts-kicker">Phase 2 · Review report</div>
+          <h1 className="ts-page-title">{showDrill ? "训练复盘" : "面试复盘"}</h1>
+          <p className="ts-page-subtitle">Session: {sessionId} · 把本轮表现拆解为分数、证据和下一步练习方向。</p>
+        </div>
       </div>
 
       {showDrill ? (
@@ -241,7 +246,7 @@ export default function Review() {
             dimensionScores={stateData.dimension_scores || overall?.dimension_scores}
             avgScore={stateData.avg_score ?? overall?.avg_score}
           />
-          <div className="bg-card border border-border rounded-box px-5 py-6 md:px-8 leading-[1.8] text-[15px]">
+          <div className="ts-data-card px-5 py-6 md:px-8 leading-[1.8] text-[15px]">
             <div className="md-content">
               <ReactMarkdown>{review || ""}</ReactMarkdown>
             </div>
@@ -256,7 +261,7 @@ export default function Review() {
                 {showTranscript ? "收起面试记录" : "查看面试记录"}
               </button>
               {showTranscript && (
-                <div className="mt-4 bg-card border border-border rounded-box px-4 py-5 md:px-6 max-h-[500px] overflow-y-auto">
+                <div className="mt-4 ts-data-card px-4 py-5 md:px-6 max-h-[500px] overflow-y-auto">
                   {messages.map((msg, i) => (
                     <div key={i} className="py-2 border-b border-border text-sm leading-relaxed">
                       <strong style={{ color: msg.role === "user" ? "var(--accent-light)" : "var(--green)" }}>

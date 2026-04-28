@@ -1,8 +1,12 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+from fastapi import HTTPException
 
 from backend.config import settings
+from backend.models import AuthUser, RuntimeSettingsUpdateRequest, UserRole, UserStatus
 from backend.storage import users as user_storage
 from backend.security import hash_password
 
@@ -84,6 +88,65 @@ class RuntimeSettingsTests(unittest.TestCase):
         self.assertEqual(settings.model, default_model)
         persisted = self.runtime_settings.get_persisted_runtime_settings()
         self.assertNotIn("model", persisted)
+
+
+class AdminRuntimeSettingsValidationTests(unittest.TestCase):
+    def setUp(self):
+        self.original_api_base = settings.api_base
+        self.original_api_key = settings.api_key
+        self.original_model = settings.model
+        self.admin_user = AuthUser(
+            id="admin-1",
+            username="admin",
+            display_name="Admin",
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+
+    def tearDown(self):
+        settings.api_base = self.original_api_base
+        settings.api_key = self.original_api_key
+        settings.model = self.original_model
+
+    def test_admin_test_settings_uses_existing_api_key_when_not_provided(self):
+        from backend.main import admin_test_settings
+
+        settings.api_key = "persisted-key"
+        body = RuntimeSettingsUpdateRequest(api_base="https://llm.example/v1", model="gpt-test")
+
+        with patch("backend.main.test_runtime_llm_connection") as test_connection:
+            test_connection.return_value = {"ok": True, "message": "连接成功"}
+
+            result = admin_test_settings(body, admin_user=self.admin_user)
+
+        self.assertTrue(result["ok"])
+        test_connection.assert_called_once_with(
+            api_base="https://llm.example/v1",
+            api_key="persisted-key",
+            model="gpt-test",
+        )
+
+    def test_admin_update_settings_rejects_invalid_runtime_model_before_persisting(self):
+        from backend.main import admin_update_settings
+
+        settings.api_base = "https://old.example/v1"
+        settings.api_key = "old-key"
+        settings.model = "old-model"
+        body = RuntimeSettingsUpdateRequest(api_base="https://bad.example/v1", model="bad-model")
+
+        with patch("backend.main.runtime_settings.upsert_runtime_settings") as upsert_mock, patch(
+            "backend.main.test_runtime_llm_connection",
+            side_effect=RuntimeError("upstream timeout"),
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                admin_update_settings(body, admin_user=self.admin_user)
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("upstream timeout", str(ctx.exception.detail))
+        upsert_mock.assert_not_called()
+        self.assertEqual(settings.api_base, "https://old.example/v1")
+        self.assertEqual(settings.api_key, "old-key")
+        self.assertEqual(settings.model, "old-model")
 
 
 class UserStorageUsernameTests(unittest.TestCase):

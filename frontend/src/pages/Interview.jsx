@@ -58,6 +58,7 @@ export default function Interview() {
   const currentQ = questions[currentIndex];
   const totalQ = questions.length;
   const answeredCount = Object.keys(answers).length;
+  const drillProgress = totalQ ? Math.round(((finished ? totalQ : currentIndex) / totalQ) * 100) : 0;
 
   const handleDrillSubmit = () => {
     const text = drillInput.trim();
@@ -145,9 +146,9 @@ export default function Interview() {
   // ── Drill card mode ──
   if (isDrill) {
     return (
-      <div className="flex-1 flex flex-col h-[calc(100vh-65px)]">
+      <div className="flex-1 flex flex-col h-[calc(100vh-65px)] bg-[radial-gradient(circle_at_20%_0%,rgba(59,130,246,0.16),transparent_34%)]">
         {/* Top bar */}
-        <div className="flex items-center justify-between px-4 py-3 md:px-6 border-b border-border bg-card">
+        <div className="flex items-center justify-between px-4 py-3 md:px-6 border-b border-border bg-surface/80 backdrop-blur-xl">
           <div className="flex items-center gap-2 md:gap-3 flex-wrap">
             <span className={`px-2.5 py-1 rounded-md text-xs font-medium ${modeBadge.cls}`}>{modeBadge.text}</span>
             {initData.topic && <span className="text-sm text-dim">{initData.topic}</span>}
@@ -198,15 +199,15 @@ export default function Interview() {
           ) : currentQ ? (
             <>
               {/* Progress bar */}
-              <div className="w-full max-w-[720px] flex items-center gap-2">
+              <div className="w-full max-w-[760px] flex items-center gap-3">
                 <div className="flex-1 h-1 rounded-sm bg-border overflow-hidden">
-                  <div className="h-full rounded-sm bg-accent transition-[width] duration-300 ease-in-out" style={{ width: `${(currentIndex / totalQ) * 100}%` }} />
+                  <div className="h-full rounded-sm bg-accent transition-[width] duration-300 ease-in-out" style={{ width: `${drillProgress}%` }} />
                 </div>
                 <span className="text-[13px] text-dim whitespace-nowrap">{currentIndex + 1} / {totalQ}</span>
               </div>
 
               {/* Question card */}
-              <div className="w-full max-w-[720px] bg-card border border-border rounded-2xl px-5 py-6 md:px-8 md:py-7 animate-fade-in">
+              <div className="w-full max-w-[760px] ts-data-card px-5 py-6 md:px-8 md:py-7 animate-fade-in">
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-[13px] font-semibold text-accent-light bg-accent/12 px-3 py-1 rounded-md">Q{currentQ.id}</span>
                   <div className="flex items-center gap-2">
@@ -228,11 +229,11 @@ export default function Interview() {
               </div>
 
               {/* Input area */}
-              <div className="w-full max-w-[720px] flex flex-col md:flex-row gap-3 py-2">
+              <div className="w-full max-w-[760px] flex flex-col md:flex-row gap-3 py-2">
                 <div className="flex-1 relative">
                   <textarea
                     ref={textareaRef}
-                    className="w-full px-4 py-3.5 rounded-box border border-border bg-input text-text resize-none outline-none min-h-[80px] max-h-[240px] leading-relaxed text-[15px]"
+                    className="w-full px-4 py-4 rounded-2xl border border-border bg-input text-text resize-none outline-none min-h-[112px] max-h-[300px] leading-relaxed text-[15px] shadow-soft"
                     value={drillInput}
                     onChange={(e) => setDrillInput(e.target.value)}
                     onKeyDown={handleKeyDown}
@@ -286,8 +287,8 @@ export default function Interview() {
 
   // ── Chat mode (resume interview) ──
   return (
-    <div className="flex-1 flex flex-col h-[calc(100vh-65px)]">
-      <div className="flex items-center justify-between px-4 py-3 md:px-6 border-b border-border bg-card">
+    <div className="flex-1 flex flex-col h-[calc(100vh-65px)] bg-[radial-gradient(circle_at_20%_0%,rgba(59,130,246,0.16),transparent_34%)]">
+      <div className="flex items-center justify-between px-4 py-3 md:px-6 border-b border-border bg-surface/80 backdrop-blur-xl">
         <div className="flex items-center gap-2 md:gap-3 flex-wrap">
           <span className={`px-2.5 py-1 rounded-md text-xs font-medium ${modeBadge.cls}`}>{modeBadge.text}</span>
           {initData.topic && <span className="text-sm text-dim">{initData.topic}</span>}
@@ -307,7 +308,7 @@ export default function Interview() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-6 md:px-6 md:py-8 flex flex-col gap-7 max-w-3xl w-full mx-auto">
+      <div className="flex-1 overflow-y-auto px-4 py-6 md:px-6 md:py-8 flex flex-col gap-5 max-w-3xl w-full mx-auto">
         {messages.map((msg, i) => (
           <ChatBubble key={i} role={msg.role} content={msg.content} />
         ))}
@@ -322,11 +323,11 @@ export default function Interview() {
         <div ref={chatEndRef} />
       </div>
 
-      <div className="px-4 pt-4 pb-5 md:px-6 md:pb-6 flex justify-center">
+      <div className="px-4 pt-4 pb-5 md:px-6 md:pb-6 flex justify-center border-t border-border bg-surface/70 backdrop-blur-xl">
         <div className="relative w-full max-w-3xl">
           <textarea
             ref={textareaRef}
-            className="w-full px-4 py-4 md:px-5 pr-14 rounded-2xl border border-border bg-card text-text resize-none outline-none min-h-[80px] max-h-[240px] leading-normal text-[15px]"
+            className="w-full px-4 py-4 md:px-5 pr-14 rounded-2xl border border-border bg-input text-text resize-none outline-none min-h-[96px] max-h-[260px] leading-relaxed text-[15px] shadow-soft"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}

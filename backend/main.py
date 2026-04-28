@@ -39,12 +39,8 @@ from backend.models import (
     RuntimeSettingsUpdateRequest,
     StartInterviewRequest,
 )
-from backend.runtime_settings import (
-    delete_runtime_settings,
-    get_persisted_runtime_settings,
-    get_runtime_settings_admin_view,
-    upsert_runtime_settings,
-)
+from backend import runtime_settings
+from backend.runtime_settings_validation import build_runtime_llm_test_payload, test_runtime_llm_connection
 from backend.security import create_access_token, get_current_user, hash_password, require_admin, verify_password
 from backend.storage.sessions import (
     append_message,
@@ -97,6 +93,17 @@ def _refresh_runtime_clients(changed_keys: set[str]):
     if not changed_keys or changed_keys & {"embedding_api_base", "embedding_api_key", "embedding_model"}:
         get_embedding()
     _init_llama_settings()
+
+
+def _build_runtime_llm_candidate(updates: dict[str, str]) -> dict[str, str]:
+    return build_runtime_llm_test_payload(
+        updates,
+        {
+            "api_base": settings.api_base,
+            "api_key": settings.api_key,
+            "model": settings.model,
+        },
+    )
 
 
 @app.on_event("startup")
@@ -621,33 +628,50 @@ async def get_interview_topics(current_user: AuthUser = Depends(get_current_user
 
 @router.get("/admin/settings")
 def admin_get_settings(admin_user: AuthUser = Depends(require_admin)):
-    return get_runtime_settings_admin_view()
+    return runtime_settings.get_runtime_settings_admin_view()
+
+
+@router.post("/admin/settings/test")
+def admin_test_settings(body: RuntimeSettingsUpdateRequest, admin_user: AuthUser = Depends(require_admin)):
+    updates = body.model_dump(exclude_none=True)
+    try:
+        candidate = _build_runtime_llm_candidate(updates)
+        return test_runtime_llm_connection(**candidate)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"模型连接测试失败: {exc}") from exc
 
 
 @router.patch("/admin/settings")
 def admin_update_settings(body: RuntimeSettingsUpdateRequest, admin_user: AuthUser = Depends(require_admin)):
     updates = body.model_dump(exclude_none=True)
     if not updates:
-        return get_runtime_settings_admin_view()
+        return runtime_settings.get_runtime_settings_admin_view()
 
-    previous = get_persisted_runtime_settings()
     changed_keys = set(updates.keys())
+    if changed_keys & {"api_base", "api_key", "model"}:
+        try:
+            candidate = _build_runtime_llm_candidate(updates)
+            test_runtime_llm_connection(**candidate)
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to validate runtime settings: {exc}") from exc
+
+    previous = runtime_settings.get_persisted_runtime_settings()
     previous_runtime_values = {key: getattr(settings, key) for key in changed_keys}
     try:
-        upsert_runtime_settings(updates)
+        runtime_settings.upsert_runtime_settings(updates)
         _refresh_runtime_clients(changed_keys)
     except Exception as exc:
         restore_values = {key: previous[key] for key in changed_keys if key in previous}
         delete_keys = changed_keys - set(previous)
         if delete_keys:
-            delete_runtime_settings(delete_keys)
+            runtime_settings.delete_runtime_settings(delete_keys)
         if restore_values:
-            upsert_runtime_settings(restore_values)
+            runtime_settings.upsert_runtime_settings(restore_values)
         for key, value in previous_runtime_values.items():
             setattr(settings, key, value)
         _refresh_runtime_clients(changed_keys)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to apply runtime settings: {exc}") from exc
-    return get_runtime_settings_admin_view()
+    return runtime_settings.get_runtime_settings_admin_view()
 
 
 @router.patch("/admin/me")
