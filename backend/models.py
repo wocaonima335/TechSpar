@@ -80,6 +80,19 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
 
+class EmailVerificationRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=256)
+
+
+class RegisterRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    display_name: str = Field(min_length=1, max_length=64)
+    email: str = Field(min_length=3, max_length=256)
+    password: str = Field(min_length=6, max_length=256)
+    verification_code: str | None = Field(default=None, min_length=4, max_length=12)
+    invitation_code: str | None = Field(default=None, max_length=128)
+
+
 class AuthUser(BaseModel):
     id: str
     username: str
@@ -111,6 +124,17 @@ class RuntimeSettingsUpdateRequest(BaseModel):
     api_base: str | None = Field(default=None, max_length=512)
     api_key: str | None = Field(default=None, max_length=512)
     model: str | None = Field(default=None, max_length=256)
+    registration_enabled: bool | None = None
+    email_verification_enabled: bool | None = None
+    invitation_code_enabled: bool | None = None
+    invitation_code: str | None = Field(default=None, max_length=128)
+    smtp_server: str | None = Field(default=None, max_length=256)
+    smtp_port: int | None = Field(default=None, ge=1, le=65535)
+    smtp_account: str | None = Field(default=None, max_length=256)
+    smtp_from: str | None = Field(default=None, max_length=256)
+    smtp_token: str | None = Field(default=None, max_length=512)
+    smtp_ssl_enabled: bool | None = None
+    smtp_force_auth_login: bool | None = None
 
 
 class AdminSelfUpdateRequest(BaseModel):

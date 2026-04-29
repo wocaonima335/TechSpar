@@ -15,6 +15,7 @@ const Home = lazy(() => import("./pages/Home"));
 const Interview = lazy(() => import("./pages/Interview"));
 const Knowledge = lazy(() => import("./pages/Knowledge"));
 const Login = lazy(() => import("./pages/Login"));
+const Register = lazy(() => import("./pages/Register"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Review = lazy(() => import("./pages/Review"));
@@ -46,6 +47,7 @@ function App() {
             <Suspense fallback={<RouteFallback />}>
               <Routes>
                 <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
                 <Route path="/" element={<ProtectedPage><Home /></ProtectedPage>} />
                 <Route path="/interview/:sessionId" element={<ProtectedPage><Interview /></ProtectedPage>} />
                 <Route path="/review/:sessionId" element={<ProtectedPage><Review /></ProtectedPage>} />

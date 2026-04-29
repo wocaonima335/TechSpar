@@ -28,6 +28,7 @@ def ensure_users_table():
             username TEXT NOT NULL,
             display_name TEXT NOT NULL,
             password_hash TEXT NOT NULL,
+            email TEXT,
             role TEXT NOT NULL,
             status TEXT NOT NULL,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -35,7 +36,11 @@ def ensure_users_table():
         )
         """
     )
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+    if "email" not in columns:
+        conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL AND email != ''")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)")
     conn.commit()
@@ -69,6 +74,13 @@ def get_user_by_id(user_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+def get_user_by_email(email: str) -> dict | None:
+    conn = _get_conn()
+    row = conn.execute("SELECT * FROM users WHERE lower(email) = lower(?)", (email.strip(),)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
 def list_users() -> list[AuthUser]:
     conn = _get_conn()
     rows = conn.execute("SELECT * FROM users ORDER BY created_at ASC, username ASC").fetchall()
@@ -91,6 +103,7 @@ def create_user(
     display_name: str,
     password_hash: str,
     role: UserRole = UserRole.MEMBER,
+    email: str | None = None,
     status: UserStatus = UserStatus.ACTIVE,
     user_id: str | None = None,
 ) -> AuthUser:
@@ -100,10 +113,10 @@ def create_user(
     conn = _get_conn()
     conn.execute(
         """
-        INSERT INTO users (id, username, display_name, password_hash, role, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO users (id, username, display_name, password_hash, email, role, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (user_id, username, display_name, password_hash, role.value, status.value, now),
+        (user_id, username, display_name, password_hash, email, role.value, status.value, now),
     )
     conn.commit()
     row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()

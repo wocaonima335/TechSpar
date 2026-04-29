@@ -6,6 +6,7 @@ import shutil
 import sqlite3
 from backend.config import settings
 from backend.runtime_settings import ensure_runtime_settings_table, load_runtime_settings_into_memory
+from backend.email_verification import ensure_email_verification_table
 from backend.security import hash_password
 from backend.storage import sessions as session_storage
 from backend.storage.users import ensure_admin_user, ensure_users_table, get_first_admin_user, get_user_by_username
@@ -22,6 +23,7 @@ def _connect() -> sqlite3.Connection:
 def _ensure_base_tables():
     ensure_users_table()
     ensure_runtime_settings_table()
+    ensure_email_verification_table()
     conn = session_storage._get_conn()
     conn.close()
     init_memory_table()

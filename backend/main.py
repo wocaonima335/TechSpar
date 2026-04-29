@@ -31,16 +31,23 @@ from backend.models import (
     AdminUserUpdateRequest,
     AuthUser,
     ChatRequest,
+    EmailVerificationRequest,
     EndDrillRequest,
     InterviewMode,
     InterviewPhase,
     LoginRequest,
+    RegisterRequest,
     ResetPasswordRequest,
     RuntimeSettingsUpdateRequest,
     StartInterviewRequest,
+    UserRole,
+    UserStatus,
 )
 from backend import runtime_settings
+from backend.runtime_settings import upsert_runtime_settings  # Backward-compatible test patch target.
 from backend.runtime_settings_validation import build_runtime_llm_test_payload, test_runtime_llm_connection
+from backend.email_sender import send_registration_email
+from backend.email_verification import create_email_verification_code, normalize_email, verify_email_code
 from backend.security import create_access_token, get_current_user, hash_password, require_admin, verify_password
 from backend.storage.sessions import (
     append_message,
@@ -55,6 +62,7 @@ from backend.storage.sessions import (
 )
 from backend.storage.users import (
     create_user,
+    get_user_by_email,
     get_user_by_id,
     get_user_by_username,
     list_users,
@@ -83,6 +91,28 @@ def _serialize_user(user: AuthUser) -> dict:
 def _ensure_session_owner(owner_user_id: str, current_user: AuthUser):
     if owner_user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Session owner mismatch")
+
+
+def _auth_response_for_user(user: AuthUser) -> dict:
+    token = create_access_token(user)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": _serialize_user(user),
+    }
+
+
+def _ensure_registration_enabled():
+    runtime_settings.load_runtime_settings_into_memory()
+    if not settings.registration_enabled:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Registration is disabled")
+
+
+def _ensure_username_email_available(username: str, email: str):
+    if get_user_by_username(username):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already exists")
+    if get_user_by_email(email):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists")
 
 
 def _refresh_runtime_clients(changed_keys: set[str]):
@@ -140,12 +170,69 @@ def login(body: LoginRequest):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
 
     update_last_login(user.id)
-    token = create_access_token(user)
+    return _auth_response_for_user(user)
+
+
+@router.get("/auth/register/options")
+def register_options():
+    runtime_settings.load_runtime_settings_into_memory()
     return {
-        "access_token": token,
-        "token_type": "bearer",
-        "user": _serialize_user(user),
+        "registration_enabled": bool(settings.registration_enabled),
+        "email_verification_enabled": bool(settings.email_verification_enabled),
+        "invitation_code_enabled": bool(settings.invitation_code_enabled),
     }
+
+
+@router.post("/auth/email-verification")
+def request_email_verification(body: EmailVerificationRequest):
+    _ensure_registration_enabled()
+    runtime_settings.load_runtime_settings_into_memory()
+    if not settings.email_verification_enabled:
+        return {"ok": True, "email_verification_enabled": False}
+
+    email = normalize_email(str(body.email))
+    if get_user_by_email(email):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists")
+
+    code = create_email_verification_code(email)
+    try:
+        send_registration_email(email, code)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"验证码邮件发送失败: {exc}") from exc
+    return {"ok": True, "email_verification_enabled": True}
+
+
+@router.post("/auth/register")
+def register(body: RegisterRequest):
+    _ensure_registration_enabled()
+    email = normalize_email(str(body.email))
+    username = body.username.strip()
+    display_name = body.display_name.strip()
+    _ensure_username_email_available(username, email)
+
+    if settings.invitation_code_enabled:
+        expected_code = str(settings.invitation_code or "").strip()
+        submitted_code = str(body.invitation_code or "").strip()
+        if not expected_code or submitted_code != expected_code:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="邀请码无效")
+
+    if settings.email_verification_enabled:
+        if not body.verification_code or not verify_email_code(email, body.verification_code, consume=True):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="邮箱验证码无效或已过期")
+
+    try:
+        user = create_user(
+            username=username,
+            display_name=display_name,
+            email=email,
+            password_hash=hash_password(body.password),
+            role=UserRole.MEMBER,
+            status=UserStatus.ACTIVE,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    update_last_login(user.id)
+    return _auth_response_for_user(user)
 
 
 @router.get("/auth/me")
@@ -648,6 +735,13 @@ def admin_update_settings(body: RuntimeSettingsUpdateRequest, admin_user: AuthUs
         return runtime_settings.get_runtime_settings_admin_view()
 
     changed_keys = set(updates.keys())
+    for secret_key in ("smtp_token", "invitation_code"):
+        if secret_key in updates and updates[secret_key] == "":
+            updates.pop(secret_key)
+            changed_keys.remove(secret_key)
+            if not updates:
+                return runtime_settings.get_runtime_settings_admin_view()
+
     if changed_keys & {"api_base", "api_key", "model"}:
         try:
             candidate = _build_runtime_llm_candidate(updates)
@@ -659,7 +753,8 @@ def admin_update_settings(body: RuntimeSettingsUpdateRequest, admin_user: AuthUs
     previous_runtime_values = {key: getattr(settings, key) for key in changed_keys}
     try:
         runtime_settings.upsert_runtime_settings(updates)
-        _refresh_runtime_clients(changed_keys)
+        if changed_keys & {"api_base", "api_key", "model", "embedding_api_base", "embedding_api_key", "embedding_model"}:
+            _refresh_runtime_clients(changed_keys)
     except Exception as exc:
         restore_values = {key: previous[key] for key in changed_keys if key in previous}
         delete_keys = changed_keys - set(previous)
@@ -669,7 +764,8 @@ def admin_update_settings(body: RuntimeSettingsUpdateRequest, admin_user: AuthUs
             runtime_settings.upsert_runtime_settings(restore_values)
         for key, value in previous_runtime_values.items():
             setattr(settings, key, value)
-        _refresh_runtime_clients(changed_keys)
+        if changed_keys & {"api_base", "api_key", "model", "embedding_api_base", "embedding_api_key", "embedding_model"}:
+            _refresh_runtime_clients(changed_keys)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to apply runtime settings: {exc}") from exc
     return runtime_settings.get_runtime_settings_admin_view()
 

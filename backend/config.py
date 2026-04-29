@@ -20,6 +20,19 @@ class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password: str = ""
 
+    # Registration and SMTP email verification
+    registration_enabled: bool = False
+    email_verification_enabled: bool = True
+    invitation_code_enabled: bool = False
+    invitation_code: str = ""
+    smtp_server: str = ""
+    smtp_port: int = 465
+    smtp_account: str = ""
+    smtp_from: str = ""
+    smtp_token: str = ""
+    smtp_ssl_enabled: bool = True
+    smtp_force_auth_login: bool = False
+
     # Paths
     base_dir: Path = Path(__file__).resolve().parent.parent
     resume_path: Path = Path(__file__).resolve().parent.parent / "data" / "resume"

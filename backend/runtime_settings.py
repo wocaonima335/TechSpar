@@ -15,13 +15,26 @@ RUNTIME_SETTINGS_FIELDS = (
     "embedding_api_base",
     "embedding_api_key",
     "embedding_model",
+    "registration_enabled",
+    "email_verification_enabled",
+    "invitation_code_enabled",
+    "invitation_code",
+    "smtp_server",
+    "smtp_port",
+    "smtp_account",
+    "smtp_from",
+    "smtp_token",
+    "smtp_ssl_enabled",
+    "smtp_force_auth_login",
 )
 DEFAULT_RUNTIME_SETTINGS = {
     key: getattr(settings, key)
     for key in RUNTIME_SETTINGS_FIELDS
 }
-SECRET_FIELDS = {"api_key", "embedding_api_key"}
+SECRET_FIELDS = {"api_key", "embedding_api_key", "smtp_token", "invitation_code"}
 FLOAT_FIELDS = set()
+INT_FIELDS = {"smtp_port"}
+BOOL_FIELDS = {"registration_enabled", "email_verification_enabled", "invitation_code_enabled", "smtp_ssl_enabled", "smtp_force_auth_login"}
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -49,12 +62,22 @@ def ensure_runtime_settings_table():
 def _coerce_value(key: str, value: str) -> Any:
     if key in FLOAT_FIELDS:
         return float(value)
+    if key in INT_FIELDS:
+        return int(value)
+    if key in BOOL_FIELDS:
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
     return value
 
 
 def _serialize_value(key: str, value: Any) -> str:
     if key in FLOAT_FIELDS:
         return str(float(value))
+    if key in INT_FIELDS:
+        return str(int(value))
+    if key in BOOL_FIELDS:
+        if isinstance(value, str):
+            return "true" if value.strip().lower() in {"1", "true", "yes", "on"} else "false"
+        return "true" if bool(value) else "false"
     return "" if value is None else str(value)
 
 
@@ -132,7 +155,22 @@ def _mask_secret(value: str) -> str:
     return value[:2] + ("*" * (len(value) - 4)) + value[-2:]
 
 
-ADMIN_VISIBLE_FIELDS = ("api_base", "api_key", "model")
+ADMIN_VISIBLE_FIELDS = (
+    "api_base",
+    "api_key",
+    "model",
+    "registration_enabled",
+    "email_verification_enabled",
+    "invitation_code_enabled",
+    "invitation_code",
+    "smtp_server",
+    "smtp_port",
+    "smtp_account",
+    "smtp_from",
+    "smtp_token",
+    "smtp_ssl_enabled",
+    "smtp_force_auth_login",
+)
 
 
 def get_runtime_settings_admin_view() -> dict[str, Any]:

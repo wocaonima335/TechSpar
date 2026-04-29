@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { getMe, login as loginRequest } from "../api/auth";
+import { getMe, login as loginRequest, register as registerRequest } from "../api/auth";
 import { ACCESS_TOKEN_KEY, getStoredToken, setStoredToken } from "../api/client";
 import { AuthContext } from "./authContextValue";
 
@@ -61,6 +61,14 @@ export function AuthProvider({ children }) {
     return response.user;
   };
 
+  const register = async (payload) => {
+    const response = await registerRequest(payload);
+    setToken(response.access_token || "");
+    setCurrentUser(response.user || null);
+    setAuthLoading(false);
+    return response.user;
+  };
+
   const updateCurrentUser = (user) => {
     setCurrentUser(user || null);
   };
@@ -76,6 +84,7 @@ export function AuthProvider({ children }) {
     authLoading,
     isAuthenticated: Boolean(token && currentUser),
     login,
+    register,
     logout,
     restoreSession,
     updateCurrentUser,

@@ -16,6 +16,9 @@ data/user_profile/insights/*
 !data/resume/.gitkeep
 !data/user_profile/.gitkeep
 data/interviews.db
+data/app.db
+data/*.db
+data/*.db.bak*
 
 # Generated / cache
 data/.index_cache/

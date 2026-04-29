@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
+import { getRegisterOptions } from "../api/auth";
 import { useAuth } from "../context/useAuth";
 
 export default function Login() {
@@ -11,8 +12,23 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [registrationEnabled, setRegistrationEnabled] = useState(false);
 
   const from = location.state?.from?.pathname || "/";
+
+  useEffect(() => {
+    let cancelled = false;
+    getRegisterOptions()
+      .then((data) => {
+        if (!cancelled) setRegistrationEnabled(Boolean(data.registration_enabled));
+      })
+      .catch(() => {
+        if (!cancelled) setRegistrationEnabled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -105,7 +121,11 @@ export default function Login() {
             </form>
 
             <div className="mt-6 rounded-2xl border border-border bg-card/55 px-4 py-3 text-xs leading-6 text-muted">
-              账号由管理员创建。若无法登录，请确认用户名、密码或联系系统管理员。
+              {registrationEnabled ? (
+                <span>还没有账号？ <Link className="font-bold text-text hover:text-primary" to="/register">使用邮箱注册</Link></span>
+              ) : (
+                <span>账号由管理员创建。若无法登录，请确认用户名、密码或联系系统管理员。</span>
+              )}
             </div>
           </div>
         </section>
